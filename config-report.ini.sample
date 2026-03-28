@@ -1,0 +1,47 @@
+[Router]
+routerip = 192.168.0.1
+password = DEIN_ROUTER_PASSWORT
+
+[Database]
+db_name = router_data.db
+
+[Email]
+smtp_server = smtp.example.com
+smtp_port = 587
+sender_email = sender@example.com
+sender_password = PASSWORD
+recipient_email = recipient@example.com
+
+[Charts]
+hours_back = 48
+moving_average_days = 7
+start_hour = 0
+
+table_1 = dsl
+field_1 = downstream_noise_margin
+label_1 = SNR Downstream (dB)
+
+[Events]
+# Zeitraum für das Event-Log und die AI Analyse
+hours_back = 24
+start_hour = 0
+
+# Ausgeschlossene Event-Typen für das Log und die Analyse
+exclude_types = Mesh, DHCPD
+
+# Log Level Filter: 0 Notfall   1 Alarm    2 Kritisch  3 Fehler 
+#                   4 Vorsicht  5 Hinweis  6 Info      7 Debug (zeigt alles)
+#                   9 wie 7 Debug aber filtert 'exclude_types' aus
+show_level = 4
+
+[Reports]
+# Alte Reports löschen (0 = deaktiviert)
+cleanup_reports = 7
+
+[AI]
+# Provider "gemini" oder "AppleShortcuts" (siehe Doku bzgl. ai-cloud Shortcut Einrichtung)
+ai_provider = gemini
+ai_api_key = DEIN_GEMINI_API_KEY
+
+[Language]
+lang = de

@@ -1,0 +1,48 @@
+# Python - Virtuelle Umgebungen & Cache
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs und Editoren
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Konfiguration und Sicherheit
+*.env
+.env
+config-report.ini
+# Sample-Datei explizit erlaubt
+!config-report.ini.sample
+
+# Datenbanken (SQLite)
+router_data.db
+*.db-shm
+*.db-wal
+*.sqlite-journal
+
+# Temporäre Dateien des Projekts
+test.json
+last_import.txt
+.test_api_daily.py
+*.log
+*.ini
+*.bak
+
+# Generierte Dateien / Archive
+logs/
+reports/
+screenshots/
+site/
+
+# Custom: Dateien ignorieren, deren Name mit 'nogit' beginnt
+nogit*

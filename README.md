@@ -11,12 +11,12 @@ Ein Python-Skript (`tp-report.py`) zur automatisierten Erfassung der DSL, Client
 * Automatisierte Generierung und Versand von täglichen Statusreports
   <details>
       <summary>
-          <span><img src="https://github.com/einstweilen/tp-link-vx231v/blob/main/images/beispiel-statusreport-sml.jpg" alt="Vorschau Statusreport"></span>
+          <span><img src="https://github.com/einstweilen/tp-link-vx231v/main/images/beispiel-statusreport-sml.jpg" alt="Vorschau Statusreport"></span>
           <br>
           <i>Anklicken für vollständigen Statusreport</i>
       </summary>
       <br>
-      <img src="https://github.com/einstweilen/tp-link-vx231v/blob/main/images/beispiel-statusreport.jpg" alt="Beispiel Statusreport">
+      <img src="https://github.com/einstweilen/tp-link-vx231v/main/images/beispiel-statusreport.jpg" alt="Beispiel Statusreport">
   </details>
 * Die Reportsprache kann zwischen Deutsch und Englisch umgeschaltet werden
 * mehr zu den Einzelbestandteilen des Reports siehe<br>
@@ -38,7 +38,7 @@ Bei der Expressvariante wird nur die Datenerfassung per Third-Party-API unterst�
 
 ---
 
-### 2. Große Lösung: [Router Monitoring: VX-Info Tracker](vx-info.md)
+### 2. Große Lösung: [Router Monitoring: VX-Info Tracker](https://github.com/einstweilen/tp-link-vx231v/blob/main/vx-info.md)
 Ein Set aus Python-Skripten (`vx-info.py`) zur automatisierten Erfassung und Darstellung der Routerdaten.
 Der Hauptunterschied zur Expressvariante ist, dass hier die Daten auf drei verschiedenen Wegen erfasst werden können:
 * die Third-Party-API (wie bei der Expressvariante)
@@ -54,8 +54,7 @@ Die drei Varianten kann man gezielt auswählen oder überläßt dem Script die A
 Wenn man dann zusätzlich das Routerlog per rsyslog parallel lokal mitschreibt, hat man alle Daten, die man für eine umfassende Analyse benötigt auch dann wenn z.B. durch einen Stromausfall Lücken im Routerlog entstehen würden oder wenn der Router aufgrund eines Fehlers nicht mehr erreichbar wäre und ein Hard Reset erforderlich wäre.
 
 Die von der Epressvariante gewonnenen Daten können weitergenutzt werden, wenn man später auf die große Lösung wechseln möchte. Idealerweise legt man dann im Verzeichnis vom VX231v Tracker einen Symlink zur bestehenden router_data.db Datei an, um die Historie weiter nutzen zu können.
-      
-  </details>
+</details>
 
 
 **Inhalte:**

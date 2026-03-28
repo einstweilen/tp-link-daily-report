@@ -1720,7 +1720,7 @@ class Reporter:
             ipv4_str = f"IPv4 {ip4}{prev_ip4_str}" if ip4 else f"IPv4 {self.t['unknown']}"
             ipv6_str = f"IPv6 {ip6}{prev_ip6_str}" if ip6 else f"IPv6 {self.t['unknown']}"
             
-            html += f"<tr><td style='padding: 20px; font-size: 13px; color: #333;'><b>{self.t['connected_since']}</b> {s_since}{time_diff_str}<br>{self.t['current']} {ipv4_str}<br>{self.t['current']} {ipv6_str}<br>{self.t['data_rate_down']} {s_down} {self.t['up']} {s_up}."
+            html += f"<tr><td style='padding: 20px; font-size: 13px; color: #333;'><b>{self.t['connected_since']}</b> {s_since}{time_diff_str}<br><b>{self.t['current']}</b> {ipv4_str}<br><b>{self.t['current']}</b> {ipv6_str}<br><b>{self.t['data_rate_down']}</b> {s_down} <b>{self.t['up']}</b> {s_up}."
             
             if uptime_data:
                 u_days, u_hours = uptime_data

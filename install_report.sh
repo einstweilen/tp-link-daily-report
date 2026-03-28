@@ -159,10 +159,10 @@ main() {
         info "Trage Daten in $CONFIG_FILE ein..."
         if [[ "$(uname)" == "Darwin" ]]; then
             sed -i '' "s/routerip = .*/routerip = $ROUTER_IP/g" "$CONFIG_FILE"
-            sed -i '' "s/password = .*/password = $GUI_PASS/g" "$CONFIG_FILE"
+            sed -i '' "/^\[Router\]/,/^\[/{s/^password = .*/password = $GUI_PASS/}" "$CONFIG_FILE"
         else
             sed -i "s/routerip = .*/routerip = $ROUTER_IP/g" "$CONFIG_FILE"
-            sed -i "s/password = .*/password = $GUI_PASS/g" "$CONFIG_FILE"
+            sed -i "/^\[Router\]/,/^\[/{s/^password = .*/password = $GUI_PASS/}" "$CONFIG_FILE"
         fi
 
         info "Teste Login mit den angegebenen Daten..."
@@ -194,7 +194,7 @@ except Exception as e:
     done
 
     step "[5/7] KI Analyse Einrichtung"
-    prompt_text "Soll eine KI Datenanalyse im Report erfolgen? (Gemini API Key benötigt) [J/N]: "
+    prompt_text "KI Datenanalyse im Report verwenden? (Gemini API Key benötigt) [J/N]: "
     read -r AI_SETUP < /dev/tty
     if [[ "$AI_SETUP" =~ ^[jJ] ]]; then
         if [ -f "setup_ai_key.sh" ]; then
@@ -208,7 +208,7 @@ except Exception as e:
     fi
 
     step "[6/7] Cronjobs einrichten"
-    prompt_text "Sollen die automatischen Jobs (Update & Report) in die crontab eingetragen werden? (j/N) " 
+    prompt_text "Automatischen Jobs für Update & Report in die crontab eintragen? (j/N): " 
     read -r CRON_SETUP < /dev/tty
     
     if [[ "$CRON_SETUP" =~ ^[jJ] ]]; then
@@ -241,7 +241,7 @@ except Exception as e:
     python3 tp-report.py --update
     
     echo -e "\n${BOLD}==== Installation abgeschlossen! ====${NC}\n"
-    info "Bitte nicht vergessen, die E-Mail Einstellungen in $CONFIG_FILE anzupassen,"
+    info "Bitte die E-Mail Einstellungen in $CONFIG_FILE anpassen,"
     info "damit der Bericht versendet werden kann."
     echo ""
 }

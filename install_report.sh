@@ -24,42 +24,42 @@ prompt_text() { echo -ne "  ${YELLOW}?${NC} $1"; }
 main() {
     echo -e "${BOLD}==== tp-report Installation ====${NC}"
 
-    BASE_URL="https://raw.githubusercontent.com/einstweilen/tp-link-vx231v/main/tp-report"
+    BASE_URL="https://raw.githubusercontent.com/einstweilen/tp-link-daily-report/main"
     TARGET_DIR="tp-report"
 
-    # Verzeichnis erstellen und wechseln, falls man nicht schon darin ist
-    if [ "$(basename "$(pwd)")" != "$TARGET_DIR" ]; then
-        if [ ! -d "$TARGET_DIR" ]; then
-            info "Erstelle Verzeichnis $TARGET_DIR..."
-            mkdir -p "$TARGET_DIR"
-        fi
-        cd "$TARGET_DIR"
-    fi
-
-    # Dateien dynamisch via GitHub API ermitteln und herunterladen (für curl | bash Modus)
-    API_URL="https://api.github.com/repos/einstweilen/tp-link-vx231v/contents/tp-report"
-    
-    info "Ermittle Dateiliste von GitHub..."
-    # Holt alle "name"-Felder aus dem JSON und filtert versteckte Dateien raus
-    FILES=$(curl -s "$API_URL" | grep '"name":' | cut -d'"' -f4 | grep -v '^\.')
-
-    if [ -z "$FILES" ]; then
-        error "Dateiliste konnte nicht geladen werden (GitHub API Limit oder kein Internet?)."
-        # Fallback auf wichtige Basis-Dateien falls API fehlschlägt
-        FILES="tp-report.py requirements.txt config-report.ini.sample setup_ai_key.sh tp-report-setup-guide.md"
-        info "Nutze Fallback-Dateiliste."
-    fi
-    
-    for file in $FILES; do
-        if [ ! -f "$file" ]; then
-            info "Lade $file herunter..."
-            if command -v curl &> /dev/null; then
-                curl -sL "$BASE_URL/$file" -o "$file"
-            elif command -v wget &> /dev/null; then
-                wget -q "$BASE_URL/$file" -O "$file"
+    # 1. Schritt: Prüfen, ob wir uns bereits im Projektordner befinden (z.B. nach git clone)
+    if [ ! -f "tp-report.py" ]; then
+        # Falls nein: In den Zielordner wechseln oder diesen erstellen
+        if [ "$(basename "$(pwd)")" != "$TARGET_DIR" ]; then
+            if [ ! -d "$TARGET_DIR" ]; then
+                info "Erstelle Verzeichnis $TARGET_DIR..."
+                mkdir -p "$TARGET_DIR"
             fi
+            cd "$TARGET_DIR"
         fi
-    done
+
+        # Falls die Hauptdatei immer noch fehlt, laden wir sie (und den Rest) herunter
+        if [ ! -f "tp-report.py" ]; then
+            # Dateien dynamisch via GitHub API ermitteln und herunterladen
+            API_URL="https://api.github.com/repos/einstweilen/tp-link-daily-report/contents"
+            
+            info "Ermittle Dateiliste von GitHub..."
+            FILES=$(curl -s "$API_URL" | grep '"name":' | cut -d'"' -f4 | grep -v '^\.')
+
+            if [ -z "$FILES" ]; then
+                error "Dateiliste konnte nicht geladen werden (GitHub API Limit?)."
+                FILES="tp-report.py requirements.txt config-report.ini.sample setup_ai_key.sh tp-report-setup-guide.md"
+                info "Nutze Fallback-Dateiliste."
+            fi
+            
+            for file in $FILES; do
+                if [ ! -f "$file" ]; then
+                    info "Lade $file herunter..."
+                    curl -sL "$BASE_URL/$file" -o "$file"
+                fi
+            done
+        fi
+    fi
 
     # Pre-flight Checks
     if ! command -v python3 &> /dev/null; then

@@ -54,9 +54,9 @@ TRANSLATIONS = {
         'rn': 'Release Notes',
         'at_a_glance': 'Auf einen Blick',
         'line_analysis': 'Leitungsanalyse',
-        'event_overview': 'Eventübersicht',
+        'event_overview': 'Reconnects',
         'presence': 'Anwesenheit',
-        'home_network': 'Heimnetzübersicht aktuell aktiver Clients',
+        'home_network': 'Aktuell aktive Clients',
         'event_log_level': 'Ereignislog der letzten 24h bis Level',
         'event_log_full': 'Vollständiges Ereignislog der letzten 24h',
         'event_log_without': 'Ereignislog der letzten 24h ohne',
@@ -85,9 +85,9 @@ TRANSLATIONS = {
         'max_hourly_fluctuation': 'Max. stündliche Schwankung (Delta):',
         'lower_is_better': '(Je geringer, desto stabiler)',
         'no_data': 'Keine Daten',
-        'snr_stats_hours': '{hours} Stunden Maximalwert {max} Minimalwert {min} Median {median}',
+        'snr_stats_hours': '{hours} Stunden Max {max} Min {min} Median {median}',
         'median_7d': 'Median der letzten {days} Tage {median}',
-        'stats_3m': '3 Monats Maximalwert {max} Minimalwert {min} Median {median}'
+        'stats_3m': '3 Monats Max {max} Min {min} Median {median}'
     },
     'en': {
         'title': 'Router Status Report',
@@ -111,9 +111,9 @@ TRANSLATIONS = {
         'rn': 'Release Notes',
         'at_a_glance': 'At a glance',
         'line_analysis': 'Line analysis',
-        'event_overview': 'Event overview',
+        'event_overview': 'Reconnects',
         'presence': 'Presence',
-        'home_network': 'Home network active clients',
+        'home_network': 'Currently active clients',
         'event_log_level': 'Event log (last 24h) up to level',
         'event_log_full': 'Complete event log (last 24h)',
         'event_log_without': 'Event log (last 24h) excluding',
@@ -142,9 +142,9 @@ TRANSLATIONS = {
         'max_hourly_fluctuation': 'Max. hourly fluctuation (Delta):',
         'lower_is_better': '(Lower is more stable)',
         'no_data': 'No data',
-        'snr_stats_hours': '{hours} hours Maximum {max} Minimum {min} Median {median}',
+        'snr_stats_hours': '{hours} hours Max {max} Min {min} Median {median}',
         'median_7d': 'Median of the last {days} days {median}',
-        'stats_3m': '3 months Maximum {max} Minimum {min} Median {median}'
+        'stats_3m': '3 months Max {max} Min {min} Median {median}'
     }
 }
 # ---------------------------------------------------------------------------
@@ -164,7 +164,7 @@ class ConfigManager:
         
     def create_default_config(self):
         self.config['Router'] = {
-            'routerip': '192.168.0.1',
+            'router_ip': '192.168.0.1',
             'password': 'DEIN_ROUTER_PASSWORT'
         }
         self.config['Database'] = {'db_name': 'router_data.db'}
@@ -408,7 +408,7 @@ class RouterAPI:
             return None
 
 # ---------------------------------------------------------------------------
-# DATABASE MANAGER (Lightweight)
+# DATABASE MANAGER
 # ---------------------------------------------------------------------------
 class DatabaseManager:
     def __init__(self, db_path="router_data.db"):
@@ -673,7 +673,7 @@ class Reporter:
                     return ":".join(parts)
             return None
 
-        router_ip = self.config.get('Router', 'routerip', fallback='192.168.1.1')
+        router_ip = self.config.get('Router', 'router_ip', fallback='192.168.1.1')
         parts = router_ip.split('.')
         home_subnet = f"{parts[0]}.{parts[1]}.{parts[2]}." if len(parts) == 4 else "192.168.1."
 
@@ -771,7 +771,7 @@ class Reporter:
             last_end = sessions[-1]['end']
             if current_time - last_end <= 300:
                 active_macs.add(mac)
-                
+
         # ADDITION: Include clients explicitly marked as connected by the last API fetch
         sql_conn = "SELECT mac FROM clients WHERE is_connected = 1 AND mac IS NOT NULL"
         _, conn_rows = self.db._run_query(sql_conn)
@@ -779,7 +779,7 @@ class Reporter:
             if r[0]:
                 active_macs.add(r[0].upper())
 
-        router_ip = self.config.get('Router', 'routerip', fallback='192.168.1.1')
+        router_ip = self.config.get('Router', 'router_ip', fallback='192.168.1.1')
         parts = router_ip.split('.')
         home_subnet = f"{parts[0]}.{parts[1]}.{parts[2]}.%" if len(parts) == 4 else "192.168.1.%"
 
@@ -800,8 +800,22 @@ class Reporter:
 
         home_active = [r for r in home_rows if r[4] and r[4].upper() in active_macs]
         guest_active = [r for r in guest_rows if r[4] and r[4].upper() in active_macs]
-        
-        return {'home': home_active, 'guest': guest_active}
+
+        # Anwesenheitszeit pro MAC aufsummieren
+        presence_seconds = {}
+        for mac, sessions in client_activity.items():
+            total = sum(
+                (s['end'] or current_time) - s['start']
+                for s in sessions
+            )
+            presence_seconds[mac.upper()] = total
+
+        start_ts = int((datetime.now() - timedelta(hours=hours)).timestamp())
+        for mac in active_macs:
+            if mac not in presence_seconds:
+                presence_seconds[mac] = int(current_time) - start_ts
+
+        return {'home': home_active, 'guest': guest_active, 'presence_seconds': presence_seconds}
 
     def _get_data_volume_clients(self):
         sql = "SELECT hostname, ip, (bytes_received + bytes_sent) as total_bytes, bytes_sent, bytes_received FROM clients WHERE bytes_received > 0 OR bytes_sent > 0 ORDER BY total_bytes DESC"
@@ -1183,7 +1197,7 @@ class Reporter:
         # X-Achse formatieren
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
         ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))  # Alle 3 Stunden ein Tick
-        plt.xticks(fontsize=9, color='#666')
+        plt.xticks(fontsize=10, color='#666')
 
         # Rahmen entfernen
         ax.spines['top'].set_visible(False)
@@ -1196,7 +1210,7 @@ class Reporter:
         by_label = dict(zip(labels, handles))
         if by_label:
             ax.legend(by_label.values(), by_label.keys(), loc='center left', bbox_to_anchor=(1, 0.5), frameon=False,
-                      fontsize=8)
+                      fontsize=10)
 
         plt.tight_layout()
 
@@ -1276,7 +1290,30 @@ class Reporter:
             mac_to_name = {}
 
         current_time = datetime.now().timestamp()
-        
+        start_ts = current_time - hours * 3600
+
+        # Dauerhaft verbundene Clients ergänzen:
+        # Clients mit is_connected=1, die keine DHCP-Sessions haben, werden als
+        # durchgehende Linie über den gesamten Auswertungszeitraum dargestellt.
+        try:
+            _, always_rows = self.db._run_query(
+                "SELECT mac FROM clients WHERE is_connected = 1 AND mac IS NOT NULL"
+            )
+            for row in always_rows:
+                mac = row[0].upper() if row[0] else None
+                if mac and mac not in client_activity:
+                    router_ip = self.config.get('Router', 'router_ip', fallback='192.168.1.1')
+                    parts = router_ip.split('.')
+                    home_subnet = f"{parts[0]}.{parts[1]}.{parts[2]}." if len(parts) == 4 else "192.168.1."
+                    _, ip_rows = self.db._run_query(
+                        "SELECT ip FROM clients WHERE mac = ?", params=(mac,)
+                    )
+                    ip = ip_rows[0][0] if ip_rows and ip_rows[0][0] else ""
+                    net = 'home' if ip.startswith(home_subnet) else 'guest'
+                    client_activity[mac] = [{'start': start_ts, 'end': current_time, 'network': net}]
+        except Exception as e:
+            self._log(f"Fehler beim Ergänzen dauerhaft verbundener Clients: {e}")
+
         active_clients = {k: v for k, v in client_activity.items() if v}
         if not active_clients:
             return None
@@ -1284,8 +1321,14 @@ class Reporter:
         # Helper to get formatted name
         def get_formatted_name(m):
             name = mac_to_name.get(m, m).strip()
-            if len(name) > 13:
-                name = name[:8] + "…" + name[-4:]
+            # Anwesenheitszeit berechnen
+            sessions = active_clients.get(m, [])
+            total_secs = int(sum((s['end'] or current_time) - s['start'] for s in sessions))
+            h = total_secs // 3600 + (1 if total_secs % 3600 > 0 else 0)
+            if h > 0:
+                name = f"{name} ({h} h)"
+            if len(name) > 18:
+                name = name[:13] + "…" + name[-4:]
             return name
 
         # Sortieren alphabetisch nach Name, rückwärts, damit Matplotlib A-Z von oben nach unten zeichnet
@@ -1328,7 +1371,7 @@ class Reporter:
                         color=bar_color, alpha=0.7, edgecolor=bar_color)
 
         ax.set_yticks(y_ticks)
-        ax.set_yticklabels(y_labels, fontsize=9)
+        ax.set_yticklabels(y_labels, fontsize=10)
         ax.tick_params(axis='y', which='both', length=0)
 
         end_dt = datetime.fromtimestamp(current_time)
@@ -1351,7 +1394,7 @@ class Reporter:
             if dt.hour == 0 and dt.minute == 0:
                 ax.axvline(x=dt, color='#b0b0b0', linestyle='-', linewidth=0.8, alpha=0.5, zorder=1)
 
-        ax.set_title(f"Türkis=Heimnetz, Orange=Gastnetz", fontsize=10, pad=10)
+        ax.set_title(f"Türkis=Heimnetz, Orange=Gastnetz", fontsize=11, pad=10)
 
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
@@ -1503,7 +1546,8 @@ class Reporter:
             if not vs: continue
             
             fig, ax = plt.subplots(figsize=(12, 4))
-            ax.plot(ts, vs, color='#4acbd6', linewidth=2, marker='o', markerfacecolor='#93365e', markeredgecolor='#93365e', markersize=6, label=label)
+            # ax.plot(ts, vs, color='#4acbd6', linewidth=2, marker='o', markerfacecolor='#93365e', markeredgecolor='#93365e', markersize=6, label=label)
+            ax.plot(ts, vs, color='#4acbd6', linewidth=2, marker='o', markerfacecolor='#4acbd6', markeredgecolor='#4acbd6', markersize=6, label=label)
             ax.fill_between(ts, vs, min(vs)-0.1, color='#4acbd6', alpha=0.1)
             
             # SPEZIALFALL: SNR Downstream (meist i=1) - Gleitender Durchschnitt
@@ -1532,7 +1576,7 @@ class Reporter:
                     if ma_curve_vs:
                         ax.plot(ma_curve_ts, ma_curve_vs, color='#666666', linestyle='--', linewidth=1.5, alpha=0.9, label=f'Ø {moving_avg_days} Tage')
                 
-                ax.legend(loc='lower left', fontsize=8, frameon=True)
+                ax.legend(loc='lower left', fontsize=10, frameon=True)
                         
             ax.grid(True, linestyle='--', linewidth=0.5, color='#ddd')
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m.\n%H:%M'))
@@ -1665,7 +1709,9 @@ class Reporter:
         uptime_data = self._get_router_uptime()
         latest_ips = self._get_ip_changes(10)
         fw_upd, fw_old, fw_act, rn_t, rn_d, rn_txt = self._check_firmware_update()
-        ai_text = self._run_ai_analysis(evt_hours)
+        ai_text = ""
+        if self.config.getboolean('Modul', 'ai_analysis', fallback=True):
+            ai_text = self._run_ai_analysis(evt_hours)
         conn_analysis_html = self._get_connection_analysis(evt_hours)
         timeline = self._generate_timeline(evt_hours)
         gantt = self._generate_client_gantt(evt_hours)
@@ -1683,7 +1729,7 @@ class Reporter:
         msg_root.attach(msg_rel)
         html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
         <body style="color: #000000; background-color: #f0eee6; font-family: Arial, Helvetica, sans-serif;">
-            <table width="100%" align="center" style="border:solid 2px #eeeeee; border-collapse: collapse; max-width: 800px; background: white;">
+            <table width="100%" align="center" style="border:solid 2px #eeeeee; border-collapse: collapse; max-width: 900px; background: white;">
                 <tr><td width="100%" align="center" style="background-color: #4acbd6; font-size: 18pt; color: white; padding: 15px;">
                     {self.t['subject']} {model_name} {self.t['title']}<br><span style="font-size: 12pt;">{self.t['from_date']} {date_str}</span>
                 </td></tr>"""
@@ -1737,23 +1783,27 @@ class Reporter:
                 <div style="border-top: 1px solid #ffcc80; margin-top: 10px; padding-top: 10px;"><strong>{self.t['rn']} ({rn_ds}):</strong><br>{rn_txt}</div></div></div></td></tr>"""
         
         # 1. AI Analyse
-        if ai_text:
-            html += f"<tr><td style='padding: 20px;'><div style='border: 2px solid #4acbd6; background-color: #f9ffff; padding: 15px; border-radius: 5px;'><h3 style='margin-top: 0; color: #008ba3;'>{self.t['at_a_glance']}</h3><div style='font-size: 14px; color: #333;'>{ai_text}</div></div></td></tr>"
+        if self.config.getboolean('Modul', 'ai_analysis', fallback=True):
+            if ai_text:
+                html += f"<tr><td style='padding: 20px;'><div style='border: 2px solid #4acbd6; background-color: #f9ffff; padding: 15px; border-radius: 5px;'><h3 style='margin-top: 0; color: #008ba3;'>{self.t['at_a_glance']}</h3><div style='font-size: 14px; color: #333;'>{ai_text}</div></div></td></tr>"
             
-        # 2. Eventübersichtschart (Timeline)
-        if timeline:
-            img_src = "cid:timeline_img" if send_email else f"data:image/png;base64,{timeline}"
-            html += f"<tr><td style='padding: 0 20px 20px 20px;'><div style='border: 1px solid #ddd; background-color: #fff; padding: 10px; border-radius: 5px;'><div style='font-size: 12px; font-weight: bold; color: #666;'>{self.t['event_overview']}</div><img src='{img_src}' style='width: 100%; max-width: 700px;'></div></td></tr>"
+        # 2. Eventübersichtschart
+        if self.config.getboolean('Modul', 'reconnects', fallback=True):
+            if timeline:
+                img_src = "cid:timeline_img" if send_email else f"data:image/png;base64,{timeline}"
+                html += f"<tr><td style='padding: 0 20px 20px 20px;'><div style='border: 1px solid #ddd; background-color: #fff; padding: 10px; border-radius: 5px;'><div style='font-size: 12px; font-weight: bold; color: #666;'>{self.t['event_overview']}</div><img src='{img_src}' style='width: 100%; max-width: 860px;'></div></td></tr>"
             
         # 3. Leitungsanalyse
-        if conn_analysis_html:
-            padding_top = "0px" if timeline else "20px"
-            html += f"<tr><td style='padding: 20px; padding-top: {padding_top};'><div style='border: 1px solid #b0bec5; background-color: #fcfcfc; padding: 15px; border-radius: 5px;'><h3 style='margin-top: 0; color: #455a64;'>{self.t['line_analysis']}</h3><div style='font-size: 14px; color: #333;'>{conn_analysis_html}</div></div></td></tr>"
+        if self.config.getboolean('Modul', 'line_analysis', fallback=True):
+            if conn_analysis_html:
+                padding_top = "0px" if timeline else "20px"
+                html += f"<tr><td style='padding: 20px; padding-top: {padding_top};'><div style='border: 1px solid #b0bec5; background-color: #fcfcfc; padding: 15px; border-radius: 5px;'><h3 style='margin-top: 0; color: #455a64;'>{self.t['line_analysis']}</h3><div style='font-size: 14px; color: #333;'>{conn_analysis_html}</div></div></td></tr>"
             
         # 4. Chart Downstreamstörabstand (SNR Chart + Stats)
-        for idx, (lbl, chart_data) in enumerate(charts):
-            img_src = f"cid:chart_{idx}" if send_email else f"data:image/png;base64,{chart_data}"
-            html += f"<tr><td style='padding: 10px 20px;'><table width='100%'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{lbl}</td></tr><tr><td style='text-align: center;'><img src='{img_src}' style='width: 100%; max-width: 700px;'></td></tr></table></td></tr>"
+        if self.config.getboolean('Modul', 'downstream_chart', fallback=True):
+            for idx, (lbl, chart_data) in enumerate(charts):
+                img_src = f"cid:chart_{idx}" if send_email else f"data:image/png;base64,{chart_data}"
+                html += f"<tr><td style='padding: 10px 20px;'><table width='100%'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{lbl}</td></tr><tr><td style='text-align: center;'><img src='{img_src}' style='width: 100%; max-width: 860px;'></td></tr></table></td></tr>"
             
             # Zusatz-Statistiken für den ersten Chart (SNR Downstream)
             if idx == 0:
@@ -1768,69 +1818,74 @@ class Reporter:
                 html += f"<tr><td style='padding: 0 20px;'>{stats_html}</td></tr>"
 
         # 5. Tagesschwankungschart (SNR Heatmap)
-        t_table = self.config.get('Charts', 'table_1', fallback='dsl')
-        t_field = self.config.get('Charts', 'field_1', fallback='downstream_noise_margin')
-        t_label = self.config.get('Charts', 'label_1', fallback=t_field)
-        variance_html = self._generate_snr_variance_html(t_table, t_field, t_label)
-        if variance_html:
-            html += f"<tr><td style='padding: 10px 20px;'>{variance_html}</td></tr>"
+        if self.config.getboolean('Modul', 'snr_heatmap', fallback=True):
+            t_table = self.config.get('Charts', 'table_1', fallback='dsl')
+            t_field = self.config.get('Charts', 'field_1', fallback='downstream_noise_margin')
+            t_label = self.config.get('Charts', 'label_1', fallback=t_field)
+            variance_html = self._generate_snr_variance_html(t_table, t_field, t_label)
+            if variance_html:
+                html += f"<tr><td style='padding: 10px 20px;'>{variance_html}</td></tr>"
 
         # 6. Anwesenheits GANTT Chart
-        if gantt:
-            img_src = "cid:gantt_img" if send_email else f"data:image/png;base64,{gantt}"
-            html += f"<tr><td style='padding: 10px 20px;'><table width='100%'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{self.t['presence']}</td></tr><tr><td><img src='{img_src}' style='width: 100%; max-width: 700px;'></td></tr></table></td></tr>"
-
+        if self.config.getboolean('Modul', 'presence', fallback=True):
+            if gantt:
+                img_src = f"cid:gantt_img" if send_email else f"data:image/png;base64,{gantt}"
+                html += f"<tr><td style='padding: 10px 20px;'><table width='100%'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{self.t['presence']}</td></tr><tr><td><img src='{img_src}' style='width: 100%; max-width: 860px;'></td></tr></table></td></tr>"
+                
         # 7. Heimnetzübersicht aktiver Clients
-        if clients['home']:
-            html += f"<tr><td style='padding: 10px 20px;'><table width='100%' style='border-collapse: collapse;'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{self.t['home_network']}</td></tr><tr><td><table width='100%' style='font-size: 13px;'>"
-            for i, c in enumerate(clients['home']):
-                bg = "#ffffff" if i % 2 == 0 else "#f9f9f9"
-                typ = f"LAN {c[3]}" if str(c[2]).lower() == 'lan' and c[3] != 0 else c[2]
-                html += f"<tr style='background-color: {bg};'><td>{c[0]}</td><td style='color: #666;'>{c[1]}</td><td>{typ}</td></tr>"
+        if self.config.getboolean('Modul', 'client_presence', fallback=True):
+            if clients['home']:
+                html += f"<tr><td style='padding: 10px 20px;'><table width='100%' style='border-collapse: collapse;'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{self.t['home_network']}</td></tr><tr><td><table width='100%' style='font-size: 13px;'>"
+                for i, c in enumerate(clients['home']):
+                    bg = "#ffffff" if i % 2 == 0 else "#f9f9f9"
+                    typ = f"LAN {c[3]}" if str(c[2]).lower() == 'lan' and c[3] else c[2]
+                    html += f"<tr style='background-color: {bg};'><td>{c[0]}</td><td style='color: #666;'>{c[1]}</td><td>{typ}</td></tr>"
             html += "</table></td></tr></table></td></tr>"
-            
-        if events:
-            all_levels = [
-                "0 Notfall", "1 Alarm", "2 Kritisch", "3 Fehler", 
-                "4 Vorsicht", "5 Hinweis", "6 Info", "7 Debug"
-            ]
-            
-            if show_level <= 7:
-                visible_levels = all_levels[:show_level + 1]
-            else:
-                visible_levels = all_levels
+
+        # 8. Eventlog
+        if self.config.getboolean('Modul', 'event_log', fallback=True):   
+            if events:
+                all_levels = [
+                    "0 Notfall", "1 Alarm", "2 Kritisch", "3 Fehler", 
+                    "4 Vorsicht", "5 Hinweis", "6 Info", "7 Debug"
+                ]
                 
-            legend_html = " &bull; ".join(visible_levels)
-            
-            if 0 <= show_level <= 7:
-                level_text = all_levels[show_level]
-                header_text = f"{self.t['event_log_level']} {level_text}"
-            elif show_level == 8:
-                header_text = self.t['event_log_full']
-            elif show_level == 9:
-                if exclude:
-                    header_text = f"{self.t['event_log_without']} {', '.join(exclude)}"
+                if show_level <= 7:
+                    visible_levels = all_levels[:show_level + 1]
                 else:
-                    header_text = self.t['event_log_full']
-            else:
-                header_text = self.t['fallback_log']
+                    visible_levels = all_levels
+                    
+                legend_html = " &bull; ".join(visible_levels)
                 
-            html += f"<tr><td style='padding: 10px 20px;'><table width='100%'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{header_text}</td></tr><tr><td><table width='100%' style='font-size: 11px; color: #555;'>"
-            for i, e in enumerate(events):
-                bg = "#ffffff" if i % 2 == 0 else "#f9f9f9"
-                html += f"<tr style='background-color: {bg};'><td width='140'>{e[0]}</td><td width='80'>{e[1]}</td><td>{e[2]}</td></tr>"
-            
-            html += "<tr><td colspan='3' style='padding-top: 5px; font-size: 10px; color: #888; text-align: center; border-top: 1px solid #eee;'>"
-            html += legend_html
-            html += "</td></tr>"
-            
-            html += "</table></td></tr></table></td></tr>"
+                if 0 <= show_level <= 7:
+                    level_text = all_levels[show_level]
+                    header_text = f"{self.t['event_log_level']} {level_text}"
+                elif show_level == 8:
+                    header_text = self.t['event_log_full']
+                elif show_level == 9:
+                    if exclude:
+                        header_text = f"{self.t['event_log_without']} {', '.join(exclude)}"
+                    else:
+                        header_text = self.t['event_log_full']
+                else:
+                    header_text = self.t['fallback_log']
+                    
+                html += f"<tr><td style='padding: 10px 20px;'><table width='100%'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{header_text}</td></tr><tr><td><table width='100%' style='font-size: 11px; color: #555;'>"
+                for i, e in enumerate(events):
+                    bg = "#ffffff" if i % 2 == 0 else "#f9f9f9"
+                    html += f"<tr style='background-color: {bg};'><td width='140'>{e[0]}</td><td width='80'>{e[1]}</td><td>{e[2]}</td></tr>"
+                
+                html += "<tr><td colspan='3' style='padding-top: 5px; font-size: 10px; color: #888; text-align: center; border-top: 1px solid #eee;'>"
+                html += legend_html
+                html += "</td></tr>"
+                
+                html += "</table></td></tr></table></td></tr>"
         html += f"</table><p style='padding: 20px; text-align: center; font-size: 10pt; color: #999;'>{self.t['footer']}</p></body></html>"
         
         try:
             os.makedirs('reports', exist_ok=True)
             timestamp = datetime.now().strftime('%y%m%d_%H%M')
-            filename = f"vx-report_{timestamp}.html"
+            filename = f"tp-report_{timestamp}.html"
             rel_path = os.path.join('reports', filename)
             with open(rel_path, 'w', encoding='utf-8') as f:
                 f.write(html)
@@ -1880,7 +1935,7 @@ class Reporter:
             if reports_dir.exists() and reports_dir.is_dir():
                 now = time.time()
                 deleted_count = 0
-                for f in reports_dir.glob('vx-report*.html'):
+                for f in reports_dir.glob('tp-report*.html'):
                     if f.is_file():
                         file_age_days = (now - f.stat().st_mtime) / (24 * 3600)
                         if file_age_days > cleanup_days:
@@ -1898,11 +1953,12 @@ class Reporter:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="TP-Link Report Script")
-    parser.add_argument('--de', action='store_true', help='Report auf Deutsch')
-    parser.add_argument('--en', action='store_true', help='Report auf Englisch')
     parser.add_argument('--update', action='store_true', help='Holt Daten via API und speichert sie')
     parser.add_argument('--report-send', '--send', action='store_true', help='Generiert und versendet Report')
-    parser.add_argument('--report-show', '--show', action='store_true', help='Generiert HTML Report')
+    parser.add_argument('--report-show', '--show', action='store_true', help='Generiert und speichert HTML Report')
+    parser.add_argument('--de', action='store_true', help='Report auf Deutsch')
+    parser.add_argument('--en', action='store_true', help='Report in English')
+    parser.add_argument('--debug', action='store_true', help='Debug-Modus aktivieren')
     args = parser.parse_args()
 
     config_mgr = ConfigManager()
@@ -1916,10 +1972,9 @@ def main():
 
     # ACTION: UPDATE
     if args.update or args.report_show or args.report_send:
-        router_ip = config_mgr.config.get('Router', 'routerip', fallback='192.168.0.1')
+        router_ip = config_mgr.config.get('Router', 'router_ip', fallback='192.168.1.1')
         router_pw = config_mgr.config.get('Router', 'password', fallback='')
-        
-        api = RouterAPI(router_ip, "user", router_pw)
+        api = RouterAPI(router_ip, "user", router_pw, debug=args.debug)
         if api.login():
             print("API Login OK. Hole Daten...")
             c_data = api.get_clients()
@@ -1941,6 +1996,7 @@ def main():
     # ACTION: REPORT
     if args.report_show or args.report_send:
         rep = Reporter(config_mgr, db, lang)
+        rep.debug = args.debug
         rep.generate_report(send_email=args.report_send, show_browser=args.report_show)
 
 

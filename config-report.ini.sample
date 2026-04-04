@@ -1,5 +1,5 @@
 [Router]
-routerip = 192.168.0.1
+router_ip = 192.168.0.1
 password = DEIN_ROUTER_PASSWORT
 
 [Database]
@@ -11,6 +11,16 @@ smtp_port = 587
 sender_email = sender@example.com
 sender_password = PASSWORD
 recipient_email = recipient@example.com
+
+[Modul] # im Report anzuzeigende Module aktivieren/deaktivieren True / False
+ai_analysis = True
+reconnects = True
+line_analysis = True
+downstream_chart = True
+client_presence = True
+presence = True
+snr_heatmap = True
+event_log = True
 
 [Charts]
 hours_back = 48         # Zeitraum der Charts in Stunden

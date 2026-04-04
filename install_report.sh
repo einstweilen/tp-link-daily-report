@@ -158,10 +158,10 @@ main() {
 
         info "Trage Daten in $CONFIG_FILE ein..."
         if [[ "$(uname)" == "Darwin" ]]; then
-            sed -i '' "s/routerip = .*/routerip = $ROUTER_IP/g" "$CONFIG_FILE"
+            sed -i '' "s/router_ip = .*/router_ip = $ROUTER_IP/g" "$CONFIG_FILE"
             sed -i '' "/^\[Router\]/,/^\[/{s/^password = .*/password = $GUI_PASS/}" "$CONFIG_FILE"
         else
-            sed -i "s/routerip = .*/routerip = $ROUTER_IP/g" "$CONFIG_FILE"
+            sed -i "s/router_ip = .*/router_ip = $ROUTER_IP/g" "$CONFIG_FILE"
             sed -i "/^\[Router\]/,/^\[/{s/^password = .*/password = $GUI_PASS/}" "$CONFIG_FILE"
         fi
 

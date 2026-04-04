@@ -45,39 +45,36 @@ Der Hauptunterschied zur Expressvariante ist, dass hier die Daten auf drei versc
 * das Web-Interface des Routers (GUI-Scraping mit playwright)
 * und bei aktiviertem Superadmin-Account auch per SNMP und Telnet
 
-  <details>
-      <summary>
-      Mehr Infos
-      </summary>
+<details>
+<summary>Mehr Infos</summary>
+
 Die drei Varianten kann man gezielt auswählen oder überläßt dem Script die Auswahl der besten Methode mit automatischem Fallback auf die nächstbeste Methode, wenn die bevorzugte Methode nicht verfügbar ist.
-<br>
+
 Wenn man dann zusätzlich das Routerlog per rsyslog parallel lokal mitschreibt, hat man alle Daten, die man für eine umfassende Analyse benötigt auch dann wenn z.B. durch einen Stromausfall Lücken im Routerlog entstehen würden oder wenn der Router aufgrund eines Fehlers nicht mehr erreichbar wäre und ein Hard Reset erforderlich wäre.
 
-Die von der Epressvariante gewonnenen Daten können weitergenutzt werden, wenn man später auf die große Lösung wechseln möchte. Idealerweise legt man dann im Verzeichnis vom VX231v Tracker einen Symlink zur bestehenden router_data.db Datei an, um die Historie weiter nutzen zu können.
+Die von der Expressvariante gewonnenen Daten können weitergenutzt werden, wenn man später auf die große Lösung wechseln möchte. Idealerweise legt man dann im Verzeichnis vom VX231v Tracker einen Symlink zur bestehenden router_data.db Datei an, um die Historie weiter nutzen zu können.
+
 </details>
 
 
 **Inhalte:**
-*   Automatisierte Generierung von HTML-Statusreports
-    <details>
-        <summary>
-            <span><img src="https://github.com/einstweilen/tp-link-daily-report/main/images/beispiel-statusreport-sml.jpg" alt="Vorschau Statusreport"></span>
-            <br>
-            <i>Anklicken für vollständigen Statusreport</i>
-        </summary>
-        <br>
-        <img src="https://github.com/einstweilen/tp-link-daily-report/main/images/beispiel-statusreport.jpg" alt="Beispiel Statusreport">
-    </details>
-*   Lokales Browser-Dashboard zur Visualisierung
-    <details>
-        <summary>
-            <span><img src="https://github.com/einstweilen/tp-link-daily-report/main/images/beispiel-dashboard-sml.jpg" alt="Vorschau Dashboard"></span>
-            <br>
-            <i>Anklicken für vollständiges Dashboard</i>
-        </summary>
-        <br>
-        <img src="https://github.com/einstweilen/tp-link-daily-report/main/images/beispiel-dashboard.jpg" alt="Beispiel Browser-Dashboard">
-    </details>
+*   Automatisierte Generierung von HTML-Statusreports (wie Status Report)
+
+<details>
+<summary><img src="https://github.com/einstweilen/tp-link-daily-report/main/images/beispiel-statusreport-sml.jpg" alt="Vorschau Statusreport"><br><i>Anklicken für vollständigen Statusreport</i></summary>
+
+<img src="https://github.com/einstweilen/tp-link-daily-report/main/images/beispiel-statusreport.jpg" alt="Beispiel Statusreport">
+
+</details>
+
+*   ZUSÄTZLICH: Lokales Browser-Dashboard zur Visualisierung
+
+<details>
+<summary><img src="https://github.com/einstweilen/tp-link-daily-report/main/images/beispiel-dashboard-sml.jpg" alt="Vorschau Dashboard"><br><i>Anklicken für vollständiges Dashboard</i></summary>
+
+<img src="https://github.com/einstweilen/tp-link-daily-report/main/images/beispiel-dashboard.jpg" alt="Beispiel Browser-Dashboard">
+
+</details>
 
 <br>
 

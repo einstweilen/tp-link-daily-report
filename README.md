@@ -135,7 +135,7 @@ Die von der Expressvariante gewonnenen Daten können weitergenutzt werden, wenn 
 
   <details>
       <summary>
-          <span><img src="https://github.com/einstweilen/tp-link-vx231v/blob/main/  images/beispiel-statusreport-sml.jpg" alt="Vorschau Statusreport"></span>
+          <span><img src="https://github.com/einstweilen/tp-link-vx231v/blob/main/images/beispiel-statusreport-sml.jpg" alt="Vorschau Statusreport"></span>
           <br>
           <i>Anklicken für vollständigen Statusreport</i>
       </summary>
@@ -147,7 +147,7 @@ Die von der Expressvariante gewonnenen Daten können weitergenutzt werden, wenn 
 
   <details>
       <summary>
-          <span><img src="https://github.com/einstweilen/tp-link-vx231v/blob/main/  images/beispiel-dashboard-sml.jpg" alt="Vorschau Dashboard"></span>
+          <span><img src="https://github.com/einstweilen/tp-link-vx231v/blob/main/images/beispiel-dashboard-sml.jpg" alt="Vorschau Dashboard"></span>
           <br>
           <i>Anklicken für vollständiges Dashboard</i>
       </summary>

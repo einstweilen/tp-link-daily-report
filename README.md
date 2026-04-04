@@ -1,6 +1,6 @@
-# TP-Link VX231v Tools
+# TP-Link Status Report
 
-## Getestet mit dem TP-Link VX231v, andere TP-Link Router können abweichen
+### Getestet mit dem TP-Link VX231v, andere TP-Link Router können abweichen
 
 ### 1. Expressvariante: [TP-Link Daily Report](tp-report-setup-guide.md)
 Ein Python-Skript (`tp-report.py`) zur automatisierten Erfassung der DSL, Client und Logdaten des Routers. Es erstellt einen täglichen Statusreport und versendet diesen per E-Mail.

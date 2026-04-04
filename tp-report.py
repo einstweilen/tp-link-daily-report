@@ -346,8 +346,8 @@ class RouterAPI:
             down_max = int(float(line.get('downstreamMaxBitRate', 0)))
             
             return {
-                "Aktuelle Upload-Rate (kbit/s)": up_curr if up_curr > 0 else up_max,
-                "Aktuelle Download-Rate (kbit/s)": down_curr if down_curr > 0 else down_max,
+                "Aktuelle Upload-Rate (kbit/s)": up_curr,
+                "Aktuelle Download-Rate (kbit/s)": down_curr,
                 "Maximale Upload-Rate (kbit/s)": up_max,
                 "Maximale Download-Rate (kbit/s)": down_max,
                 "Signal-Rausch-Abstand Upload (dB)": int(float(line.get('upstreamNoiseMargin', 0))) / 10,
@@ -1720,7 +1720,7 @@ class Reporter:
             ipv4_str = f"IPv4 {ip4}{prev_ip4_str}" if ip4 else f"IPv4 {self.t['unknown']}"
             ipv6_str = f"IPv6 {ip6}{prev_ip6_str}" if ip6 else f"IPv6 {self.t['unknown']}"
             
-            html += f"<tr><td style='padding: 20px; font-size: 13px; color: #333;'><b>{self.t['connected_since']}</b> {s_since}{time_diff_str}<br><b>{self.t['current']}</b> {ipv4_str}<br><b>{self.t['current']}</b> {ipv6_str}<br><b>{self.t['data_rate_down']}</b> {s_down} <b>{self.t['up']}</b> {s_up}."
+            html += f"<tr><td style='padding: 20px; font-size: 13px; color: #333;'><b>{self.t['connected_since']}</b> {s_since}{time_diff_str}<br><b>{self.t['current']}</b> {ipv4_str}<br><b>{self.t['current']}</b> {ipv6_str}<br><b>{self.t['current']} {self.t['data_rate_down']}</b> {s_down} <b>{self.t['up']}</b> {s_up}."
             
             if uptime_data:
                 u_days, u_hours = uptime_data

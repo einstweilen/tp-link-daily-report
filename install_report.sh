@@ -208,7 +208,7 @@ except Exception as e:
     fi
 
     step "[6/7] Cronjobs einrichten"
-    prompt_text "Automatischen Jobs für Update & Report in die crontab eintragen? (j/N): " 
+    prompt_text "Automatischen Jobs für Update & Report in die crontab eintragen? (J/N): " 
     read -r CRON_SETUP < /dev/tty
     
     if [[ "$CRON_SETUP" =~ ^[jJ] ]]; then

@@ -2,7 +2,7 @@
 
 
  
-### [TP-Link Daily Report](tp-report-setup-guide.md)
+### [TP-Link Daily Report](docu/statusreport_doku.md)
 Ein Python-Skript (`tp-report.py`) zur automatisierten Erfassung der DSL, Client und Logdaten des Routers.<br>
 Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.
 
@@ -13,13 +13,12 @@ Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.
 * Datenabruf von DSL-Werten und der verbundenen Clients via [Router API von Alexandr Erohin ](https://github.com/AlexandrErohin/TP-Link-Archer-C6U)
 * Speicherung der Daten in einer Datenbank
 * Automatisierte Generierung und Versand von täglichen Statusreports
-  <details>
-      <summary>
-          <i>Beispielreport anzeigen</i>
-      </summary>
-      <br>
-      <img src="docu/images/sr-complete.png" alt="Beispiel Statusreport">
-  </details>
+<details>
+<summary><i>Vollständigen Beispielreport anzeigen</i></summary>
+
+<img src="docu/images/sr-complete.png" alt="Beispiel Statusreport">
+
+</details>
 * Die Reportsprache kann zwischen Deutsch und Englisch umgeschaltet werden
 * mehr zu den Einzelbestandteilen des Reports siehe<br>
 [Details zum Statusreport](docu/statusreport_doku.md)
@@ -101,9 +100,10 @@ Update abgeschlossen.
 
 ```
 </details>
-<br>
-[Die einzelnen Bestandteile des TP-Link Report im Detail](docu/statusreport_doku.md)
-<br>
+
+
+[Die einzelnen Module des Statusreports im Detail](docu/statusreport_doku.md)
+
 
 ---
 

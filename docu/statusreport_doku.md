@@ -5,7 +5,7 @@ Der Statusreport fasst die vom Router gesammelten Daten in einem HTML-Dokument z
 <details markdown="1">
 <summary>Beispiel: Statusreport</summary>
 
-![Beispiel Statusreport](images/beispiel-statusreport.jpg)
+![Beispiel Statusreport](images/sr-complete.jpg)
 
 </details>
 
@@ -86,7 +86,7 @@ Das Modul sendet die Routerdaten der letzten Stunden (identisch mit dem gewählt
 
 ```ini
 [AI]
-ai_provider = gemini          # "gemini" oder "AppleShortcuts"
+ai_provider = gemini
 ai_api_key  = DEIN_API_KEY
 ```
 
@@ -99,7 +99,7 @@ ai_api_key  = DEIN_API_KEY
 - **`AppleShortcuts`**: Verwednung eines lokalen Apple-Shortcuts-Workflow, um die Routerdaten an eine beliebige KI (z. B. auf einem Mac/iPhone im selben Netz) weiterzuleiten.<br>
 Dokumentation zur Einrichtung des Shortcuts siehe README.
 
-Das KI-Modul wird durch **Umbenennen** des Abschnitts in `[noAI]` dauerhaft deaktiviert – kein Löschen des API-Keys erforderlich.
+Das KI-Modul wird durch **Umbenennen** des Abschnitts in `[noAI]` dauerhaft deaktiviert – kein Löschen des API-Keys erforderlich. Alternativ kann man auch das ganze Modul durch `ai_analysis = False` deaktivieren.
 
 Sind die Routerdaten zu umfangreich für eine API-Anfrage oder erfolgt aus anderem Grund keine automatische Analyse, legt das Skript den generierten Prompt als `ai_prompt_debug.txt` im Skriptordner ab. Diese Datei kann dann zur Analyse manuell in eine beliebige KI eingefügt werden.
 
@@ -243,13 +243,12 @@ Die Tabelle listet alle zum Zeitpunkt der Reporterstellung im Netzwerk aktiven G
 
 - eine offene Session in den DHCP-Log-Auswertungen vorliegt (letzte Aktivität < 5 Minuten zurück), oder
 - der Client beim letzten Update als verbunden markiert war.
-Vor der Generierung des Statusreports wird die Liste der aktiven Clients aktualisiert.
+Bei der Generierung des Statusreports wird die Liste der aktiven Clients aktualisiert.
 
 ---
 
 ## Ereignislog
 
-<!-- BILD: images/report-eventlog.jpg -->
 ![Ereignislog](images/sr-09-eventlog.png)
 
 Aktiviert durch `event_log = True` im Abschnitt `[Modul]`.

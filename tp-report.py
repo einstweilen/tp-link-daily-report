@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TP-Link Daily Report & Dashboard
+TP-Link Daily Report
 """
 
 import argparse
@@ -455,6 +455,19 @@ class DatabaseManager:
 
     def insert_system(self, system_data, timestamp):
         if not system_data or system_data.get('firmware') == 'N/A': return
+        
+        # Check the most recent entry for firmware and serial match
+        _, rows = self._run_query("SELECT id, firmware, serial FROM system ORDER BY id DESC LIMIT 1")
+        
+        if rows:
+            last_id, last_fw, last_sn = rows[0]
+            if last_fw == system_data.get('firmware') and last_sn == system_data.get('serial'):
+                # Match found: Update existing entry with newer time and uptime
+                self._run_query('''UPDATE system SET time_ut = ?, uptime_seconds = ?, uptime_days = ? WHERE id = ?''',
+                                (int(timestamp), system_data.get('uptime_seconds', 0), system_data.get('uptime_days', 0.0), last_id))
+                return
+
+        # No match or no data: Create new entry (original behavior)
         self._run_query('''INSERT INTO system (time_ut, model, firmware, hardware, serial, uptime_seconds, uptime_days)
                            VALUES (?, ?, ?, ?, ?, ?, ?)''', 
                         (int(timestamp), system_data.get('model', ''), system_data.get('firmware', ''),
@@ -1615,7 +1628,7 @@ class Reporter:
         Relevanz-Filter: Antworte nur, wenn die Datenlage eine technische Verschlechterung oder ein drohendes Problem nahelegt.
         Wenn alles stabil ist, antworte ausschließlich mit: 'Verbindung ist stabil.'
         Synthese-Pflicht: Fasse deine Erkenntnisse in maximal zwei bis drei Sätzen als Fließtext zusammen.
-        Verbotsliste: Keine Aufzählungen, keine Wiederholung von Rohdaten, keine Kommentare zu Routine-Events oder fehlenden Updates.
+        Verbotsliste: Keine Aufzählungen, keine Wiederholung von Rohdaten, keine Kommentare zu Routine-Events (Eine Trennung pro Tag ist O.K.!)oder fehlenden Updates.
         Fokus: Benenne nur das 'Warum' der Störung (z.B. 'Kombination aus sinkendem SNR und steigenden Fehlern deutet auf Leitungsstörung hin').
         TOP PRIO!!! Prüfe, ob Du tatsächlich maximal drei Sätze verwendet hast, sonst erneut bearbeiten!
         """
@@ -1635,7 +1648,7 @@ class Reporter:
                 import urllib.request
                 import urllib.parse
                 import json
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={urllib.parse.quote(api_key)}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={urllib.parse.quote(api_key)}"
                 data = json.dumps({"contents": [{"parts":[{"text": prompt}]}]}).encode('utf-8')
                 req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
                 with urllib.request.urlopen(req) as response:
@@ -1805,17 +1818,17 @@ class Reporter:
                 img_src = f"cid:chart_{idx}" if send_email else f"data:image/png;base64,{chart_data}"
                 html += f"<tr><td style='padding: 10px 20px;'><table width='100%'><tr><td style='background-color: #4acbd6; color: white; padding: 5px;'>{lbl}</td></tr><tr><td style='text-align: center;'><img src='{img_src}' style='width: 100%; max-width: 860px;'></td></tr></table></td></tr>"
             
-            # Zusatz-Statistiken für den ersten Chart (SNR Downstream)
-            if idx == 0:
-                t_table = self.config.get('Charts', 'table_1', fallback='dsl')
-                t_field = self.config.get('Charts', 'field_1', fallback='downstream_noise_margin')
-                hb_stats, median_xd, m3_stats, ma_days = self._get_snr_stats(t_table, t_field, hours_back)
-                
-                stats_html = f"<div style='font-size: 13px; color: #333; margin-top: 5px; margin-bottom: 15px; font-family: sans-serif; line-height: 1.6; background: #f9f9f9; padding: 10px; border-left: 4px solid #4acbd6;'>"
-                stats_html += self.t['snr_stats_hours'].format(hours=hours_back, max=f"{hb_stats['max']:.1f}", min=f"{hb_stats['min']:.1f}", median=f"{hb_stats['median']:.1f}") + "<br>"
-                stats_html += self.t['stats_3m'].format(max=f"{m3_stats['max']:.1f}", min=f"{m3_stats['min']:.1f}", median=f"{m3_stats['median']:.1f}")
-                stats_html += "</div>"
-                html += f"<tr><td style='padding: 0 20px;'>{stats_html}</td></tr>"
+                # Zusatz-Statistiken für den ersten Chart (SNR Downstream)
+                if idx == 0:
+                    t_table = self.config.get('Charts', 'table_1', fallback='dsl')
+                    t_field = self.config.get('Charts', 'field_1', fallback='downstream_noise_margin')
+                    hb_stats, median_xd, m3_stats, ma_days = self._get_snr_stats(t_table, t_field, hours_back)
+                    
+                    stats_html = f"<div style='font-size: 13px; color: #333; margin-top: 5px; margin-bottom: 15px; font-family: sans-serif; line-height: 1.6; background: #f9f9f9; padding: 10px; border-left: 4px solid #4acbd6;'>"
+                    stats_html += self.t['snr_stats_hours'].format(hours=hours_back, max=f"{hb_stats['max']:.1f}", min=f"{hb_stats['min']:.1f}", median=f"{hb_stats['median']:.1f}") + "<br>"
+                    stats_html += self.t['stats_3m'].format(max=f"{m3_stats['max']:.1f}", min=f"{m3_stats['min']:.1f}", median=f"{m3_stats['median']:.1f}")
+                    stats_html += "</div>"
+                    html += f"<tr><td style='padding: 0 20px;'>{stats_html}</td></tr>"
 
         # 5. Tagesschwankungschart (SNR Heatmap)
         if self.config.getboolean('Modul', 'snr_heatmap', fallback=True):

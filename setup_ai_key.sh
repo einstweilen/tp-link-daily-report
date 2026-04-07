@@ -80,7 +80,7 @@ while true; do
         fi
 
         echo ""
-        info "Feld leerlassen um keinen Key zu hinterlegen."
+        info "Feld leerlassen um keinen Key zu hinterlegen und den Setup abzubrechen."
         prompt_text "Bitte den API Key einfügen: "
         read -r RAW_API_KEY < /dev/tty
         API_KEY=$(echo -n "$RAW_API_KEY" | tr -d '\r\n[:space:]')
@@ -109,7 +109,7 @@ import urllib.parse
 import json
 
 api_key = sys.argv[1]
-url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={urllib.parse.quote(api_key)}"
+url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={urllib.parse.quote(api_key)}"
 
 try:
     data = json.dumps({"contents": [{"parts":[{"text": "Hallo"}]}]}).encode('utf-8')

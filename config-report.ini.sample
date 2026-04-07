@@ -22,6 +22,13 @@ presence = True
 snr_heatmap = True
 event_log = True
 
+[AI]
+ai_provider = gemini
+ai_api_key = DEIN_GEMINI_API_KEY
+
+[Analyse]
+report_disconnects_level = 1 
+
 [Charts]
 hours_back = 48         # Zeitraum der Charts in Stunden
 start_hour = 0          # Startstunde der Charts
@@ -47,11 +54,6 @@ show_level = 4 # bis einschließlich dieses Levels anzeigen
 [Reports]
 # Alte Tagesreports löschen (0 = deaktiviert)
 cleanup_reports = 7
-
-[AI] # Deaktivierung der KI Analyse durch Umbenennen in [noAI]
-# unterstützt "gemini" oder "AppleShortcuts" (siehe Doku bzgl. ai-cloud Shortcut Einrichtung)
-ai_provider = gemini
-ai_api_key = DEIN_GEMINI_API_KEY
 
 [Language]
 lang = de    # de = Deutsch, en = Englisch (Ausgabesprache des Tagesreports)

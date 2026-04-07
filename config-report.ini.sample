@@ -1,47 +1,60 @@
 [Router]
-router_ip = 192.168.0.1
-password = DEIN_ROUTER_PASSWORT
+# IP des TP-Link Routers
+# passwort ist das Passwort der Router-Admin-Oberfläche
+router_ip        = 192.168.0.1
+password         = DAS_ROUTER_PASSWORT
 
 [Database]
-db_name = router_data.db  # SQLite Datenbank kompatibel zu vx-info.py
+# SQLite Datenbank kompatibel zu vx-info.py
+# Beide Skripte können dieselbe Datenbank nutzen
+# dazu in beiden configs den gleichen Pfad angeben
+db_name          = router_data.db
 
 [Email]
-smtp_server = smtp.example.com
-smtp_port = 587
-sender_email = sender@example.com
-sender_password = PASSWORD
-recipient_email = recipient@example.com
+# SMTP Server und Zugangsdaten des Providers
+# man kann sich einen eigenen Account nur für das Reportversenden und -empfangen einrichten
+# dann sind die Zugangsdaten völlig unabhängig vom Haupt-E-Mail-Account
+smtp_server      = smtp.example.com
+smtp_port        = 587
+sender_email     = ABSENDER_EMAIL@example.com
+sender_password  = DAS_EMAIL_PASSWORT
+recipient_email  = EMPFAENGER_EMAIL@example.com
 
-[Modul] # im Report anzuzeigende Module aktivieren/deaktivieren True / False
-ai_analysis = True
-reconnects = True
-line_analysis = True
+[Modul]
+# True das Modul ist aktiviert / False das Modul ist deaktiviert
+ai_analysis      = True 
+reconnects       = True
+line_analysis    = True
 downstream_chart = True
-client_presence = True
-presence = True
-snr_heatmap = True
-event_log = True
+client_presence  = True
+presence         = True
+snr_heatmap      = True
+event_log        = True
 
 [AI]
+# diese Daten werden vom Setupskript eingetragen
 ai_provider = gemini
-ai_api_key = DEIN_GEMINI_API_KEY
+ai_api_key  = DEIN_GEMINI_API_KEY
 
 [Analyse]
-report_disconnects_level = 1 
+# regelbasierte Analyse der Routerevent-Logs
+report_disconnects_level = 1
 
 [Charts]
-hours_back = 48         # Zeitraum der Charts in Stunden
-start_hour = 0          # Startstunde der Charts
-
-table_1 = dsl                     # Tabelle, aus der die Daten gelesen werden
-field_1 = downstream_noise_margin # Feld, aus dem die Daten gelesen werden
-label_1 = SNR Downstream (dB)     # Beschriftung des Charts
-moving_average_days = 7           # gleitender Durchschnitt in Tagen
+# Verlaufsdiagramm erfaßter DSL-Daten
+# die Feldnamen kann man im Skript unter
+# class DatabaseManager => def _create_tables einsehen
+hours_back       = 48
+start_hour       = 0
+table_1          = dsl
+field_1          = downstream_noise_margin
+label_1          = SNR Downstream (dB)
+moving_average_days = 7
 
 [Events]
-# Zeitraum für das Routerevent-Log und die AI Analyse
-hours_back = 24 # Zeitraum der Events in Stunden
-start_hour = 0  # Startstunde der Events
+# Zeitraum für das Routereventlog und die AI Analyse
+hours_back = 24      # Zeitraum der Events in Stunden gemessen vom Zeitpunkt der Reportgenerierung
+start_hour = 0       # Startstunde der Events (0 = Mitternacht)
 
 # Ausgeschlossene Event-Typen für das Log und die Analyse
 exclude_types = Mesh, DHCPD, VoIP
@@ -49,11 +62,15 @@ exclude_types = Mesh, DHCPD, VoIP
 # Log Level Filter: 0 Notfall   1 Alarm    2 Kritisch  3 Fehler 
 #                   4 Vorsicht  5 Hinweis  6 Info      7 Debug (zeigt alles)
 #                   9 zeigt alles wie 7 Debug aber filtert die 'exclude_types' aus
-show_level = 4 # bis einschließlich dieses Levels anzeigen
+show_level = 4      # bis einschließlich dieses Levels anzeigen
+
+cleanup_excludes = 3 # Tage bis alte Events vom Typ 'exclude_types' aus der Datenbank gelöscht werden
 
 [Reports]
 # Alte Tagesreports löschen (0 = deaktiviert)
-cleanup_reports = 7
+cleanup_reports  = 7
 
 [Language]
-lang = de    # de = Deutsch, en = Englisch (Ausgabesprache des Tagesreports)
+# Ausgabesprache des Tagesreports
+# de = Deutsch, en = Englisch
+lang = de 

@@ -524,6 +524,27 @@ class DatabaseManager:
                     except: pass
         return added
 
+    def purge_old_events(self, days, event_types, debug=False):
+        if days <= 0 or not event_types: return
+        cutoff = int(time.time()) - (days * 86400)
+        placeholders = ",".join(["?"] * len(event_types))
+        params = [cutoff] + event_types
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                if debug:
+                    sql_sel = f"SELECT datetime(time_ut, 'unixepoch', 'localtime'), type, event_text FROM events WHERE time_ut < ? AND type COLLATE NOCASE IN ({placeholders})"
+                    cursor.execute(sql_sel, params)
+                    for r in cursor.fetchall():
+                        print(f"  -> Lösche: [{r[0]}] {r[1]:<8} | {r[2]}")
+
+                cursor.execute(f"DELETE FROM events WHERE time_ut < ? AND type COLLATE NOCASE IN ({placeholders})", params)
+                if cursor.rowcount > 0:
+                    print(f"Cleanup: {cursor.rowcount} {event_types} Einträge älter als {days} Tage gelöscht.")
+        except Exception as e:
+            print(f"Cleanup Fehler: {e}")
+
 # ---------------------------------------------------------------------------
 # REPORTER
 # ---------------------------------------------------------------------------
@@ -2008,6 +2029,14 @@ def main():
 
     # ACTION: REPORT
     if args.report_show or args.report_send:
+        # DB-Cleanup für ausgeschlossene Event-Typen vor der Report-Erstellung
+        cleanup_days = config_mgr.config.getint('Events', 'cleanup_excludes', fallback=0)
+        if cleanup_days > 0:
+            exclude_raw = config_mgr.config.get('Events', 'exclude_types', fallback='')
+            types_to_purge = [t.strip() for t in exclude_raw.split(',') if t.strip()]
+            if types_to_purge:
+                db.purge_old_events(cleanup_days, types_to_purge, debug=args.debug)
+
         rep = Reporter(config_mgr, db, lang)
         rep.debug = args.debug
         rep.generate_report(send_email=args.report_send, show_browser=args.report_show)

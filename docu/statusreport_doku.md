@@ -2,13 +2,14 @@
 
 Der Statusreport fasst die vom Router gesammelten Daten in einem HTML-Dokument zusammen. Das Dokument kann direkt im Browser geöffnet oder automatisiert per E-Mail versendet werden.
 
-<details markdown="1">
-<summary>Beispiel: Statusreport</summary>
+<details>
+<summary>Vollständiger Statusreport</summary>
 
 ![Beispiel Statusreport](images/sr-complete.jpg)
 
 </details>
 
+## Report-Aufruf im Terminal
 Der Report wird mit `tp-report.py` generiert:
 
 ```bash
@@ -22,7 +23,19 @@ python3 tp-report.py --send
 python3 tp-report.py --show --en
 ```
 
-Einzelne Module des Reports lassen sich individuell über die `config-report.ini` aktivieren oder deaktivieren. True = Modul wird angezeigt, False = Modul wird nicht angezeigt:
+## Report-Sprache beim Aufruf auswählen
+Die Sprache des Reports wird über den Abschnitt `[Language]` gesteuert:
+
+```ini
+[Language]
+lang = de    # de = Deutsch, en = Englisch
+```
+
+Alternativ lässt sich die Sprache auch per Kommandozeilenargument (`--de` / `--en`) für eine einzelne Ausführung setzen; der Wert wird dabei dauerhaft in der `config-report.ini` gespeichert.
+
+## Modulauswahl
+Einzelne Module des Reports lassen sich individuell über die `config-report.ini` aktivieren oder deaktivieren.<br>
+`True` = Modul wird angezeigt, `False` = Modul wird nicht angezeigt:
 
 ```ini
 [Modul]
@@ -46,17 +59,7 @@ Der Header wird bei jeder Reporterstellung aus den aktuellen Datenbank-Werten be
 
 - Datum und Uhrzeit der aktuellen Verbindung seit letztem PPP-Connect (`PAP AuthAck`)
 - Aktuelle IPv4- und IPv6-Adresse inkl. Zeitpunkt des letzten IP-Wechsels
-- Aktuelle Down-/Upload-Datenrate aus der `dsl`-Tabelle
 - Installierte Firmware-Version und Zeit seit dem letzten Routerneustart
-
-Die Sprache des Reports wird über den Abschnitt `[Language]` gesteuert:
-
-```ini
-[Language]
-lang = de    # de = Deutsch, en = Englisch
-```
-
-Alternativ lässt sich die Sprache auch per Kommandozeilenargument (`--de` / `--en`) für eine einzelne Ausführung setzen; der Wert wird dabei dauerhaft in der `config-report.ini` gespeichert.
 
 ---
 
@@ -93,15 +96,12 @@ ai_api_key  = DEIN_API_KEY
 - **`gemini`**: Direkte Anbindung an die Google Gemini API. Hierfür ist ein kostenloser API-Key aus dem Google AI Studio erforderlich, das Script ruft auf Wunsch direkt die entsprechende Google Seite auf, um den API-Key zu erhalten.
 
 > [!NOTE]
-> Anleitung: [Wie man einen kostenlosen Gemini API Key erhält](gemini_api_key.md)
-
-
-- **`AppleShortcuts`**: Verwednung eines lokalen Apple-Shortcuts-Workflow, um die Routerdaten an eine beliebige KI (z. B. auf einem Mac/iPhone im selben Netz) weiterzuleiten.<br>
-Dokumentation zur Einrichtung des Shortcuts siehe README.
+> Schritt für Schritt Anleitung: [Wie man einen kostenlosen Gemini API Key erhält](gemini_api_key.md)
 
 Das KI-Modul wird durch **Umbenennen** des Abschnitts in `[noAI]` dauerhaft deaktiviert – kein Löschen des API-Keys erforderlich. Alternativ kann man auch das ganze Modul durch `ai_analysis = False` deaktivieren.
 
-Sind die Routerdaten zu umfangreich für eine API-Anfrage oder erfolgt aus anderem Grund keine automatische Analyse, legt das Skript den generierten Prompt als `ai_prompt_debug.txt` im Skriptordner ab. Diese Datei kann dann zur Analyse manuell in eine beliebige KI eingefügt werden.
+Sind die Routerdaten zu umfangreich für eine API-Anfrage oder erhält das Skript aus anderem Grund keine Serverantwort, legt es den generierten Prompt als `ai_prompt_debug.txt` im Skriptordner ab.<br>
+Diese Datei kann dann zur Analyse manuell in eine beliebige KI eingefügt werden.
 
 ---
 
@@ -123,7 +123,7 @@ Oberhalb der Symbole wird die Dauer des jeweiligen Verbindungsausfalls in Sekund
 
 ---
 
-## Leitungsanalyse
+## Leitungsanalyse - regelbasiert
 
 ![Leitungsanalyse](images/sr-03a-leitungsanalyse.png)
 
@@ -173,13 +173,14 @@ Zusätzlich meldet das Modul:
 
 ---
 
-## Downstream Störabstand – DSL-Parameterchart
+## Downstream Störabstand -Parameterchart
 
 ![Downstream Chart](images/sr-05-snrchart.png)
 
 Aktiviert durch `downstream_chart = True` im Abschnitt `[Modul]`.
 
-Der Chart zeigt den Verlauf eines frei konfigurierbaren DSL-Parameters über den eingestellten Zeitraum. Standardmäßig wird der Downstream Noise Margin (Störabstand) dargestellt. Zusätzlich zur Messkurve wird ein gleitender Durchschnitt über mehrere Tage eingeblendet.
+Der Chart zeigt den Verlauf eines frei konfigurierbaren DSL-Parameters über den gewählten Zeitraum. Standardmäßig wird der Downstream Noise Margin (Störabstand) dargestellt.<br>
+Zum leichteren Entdecken von Verschlechterungstendenzen wird zusätzlich zu den gemessen Werten ein gleitender Durchschnitt der letzten 7 Tage eingeblendet.
 
 ```ini
 [Charts]
@@ -198,20 +199,21 @@ Unterhalb des ersten Charts werden statistische Kennzahlen ausgegeben:
 - Maximum, Minimum und Median für den eingestellten Auswertungszeitraum
 - Maximum, Minimum und Median der letzten 3 Monate
 
+Wer zur Diagnose grafische Darstellungen über einen längeren Zeitraum benötigt, kann sich diese mit dem Skript `vx-info.py`  und dem Parameter `--dashboard` erstellen lassen, das stellt zur interaktiven Anzeige historischer Metriken einen lokalen Webserver bereit. Weitere Informationen zum [VX-Info Tracker](https://github.com/einstweilen/tp-link-vx231v/blob/main/vx-info.md).
+
 ---
 
 ## Tagesschwankungen – SNR-Heatmap
-
 
 ![SNR Heatmap](images/sr-06-heat-map.png)
 
 Aktiviert durch `snr_heatmap = True` im Abschnitt `[Modul]`.
 
-Die Heatmap visualisiert die stündlichen Schwankungen des konfigurierten DSL-Parameters (standardmäßig SNR Downstream) über die letzten 3 Monate. Für jede Stunde des Tages (0–23 Uhr) wird der Durchschnittswert berechnet; aus Maximum und Minimum dieser stündlichen Mittelwerte ergibt sich das Delta.
+Die Heatmap visualisiert die täglichen Schwankungen des konfigurierten DSL-Parameters (standardmäßig `SNR Downstream`) über die letzten 3 Monate. Für jede Stunde des Tages (0–24 Uhr) wird der Durchschnittswert berechnet; aus Maximum und Minimum dieser stündlichen Mittelwerte ergibt sich das Delta.
 
 Das Farbspektrum reicht von Grün (gering, stabil) über Gelb bis Rot (hohe Schwankung). Die Heatmap hilft dabei, tageszeit-abhängige Instabilitäten der DSL-Verbindung zu erkennen.
 
-Der angezeigte Parameter ist identisch mit dem unter `[Charts]` konfigurierten (`table_1` / `field_1`).
+Der in der Heatmap angezeigte Parameter ist der gleiche, wie der unter `[Charts]` (`table_1` / `field_1`) definierte.
 
 ---
 
@@ -229,7 +231,7 @@ Die Farbgebung unterscheidet:
 
 Die Zuordnung zum Heimnetz oder Gastnetz wird durch Korrelation der DHCP-`DISCOVER`/`OFFER`-Events aus dem Router-Log mit den IP-Adressen ermittelt. Dabei wird das Subnetz der Router-IP (`router_ip` in `[Router]`) als Heimnetz-Referenz verwendet.
 
-In Klammern wird hinter jedem Clientname die Aktivitätszeit in Stunden im eingestellten Zeitraum angegeben.
+In Klammern hinter jedem Clientname steht die Aktivitätszeit in Stunden im eingestellten Zeitraum.
 
 ---
 
@@ -264,7 +266,10 @@ show_level    = 4           # Maximaler Loglevel (inklusiv)
 exclude_types = Mesh, DHCPD, VoIP  # Ausgeschlossene Event-Typen (bei Level 9)
 ```
 
-Da der meiste reine "Verwaltungstraffic"
+Da der reine Verwaltungstraffic des Routers i.d.R. nicht relevant für eine Verbindungsproblemanalyse ist, kann man die Events der `exclude_types` im Report ausblenden.
+
+Um ein übermäßges Anwachsen der Datenbank zu verhindern, können über den Parameter `cleanup_excludes` alle Events der Typen `exclude_types`, die älter als X Tage sind, aus der Datenbank gelöscht werden.<br>
+Durch `cleanup_excludes = 0` werden keine Events zeitgesteuert gelöscht.
 
 ### Loglevel
 
@@ -277,9 +282,9 @@ Der Router vergibt für jeden Eintrag einen Schweregrad von 0 bis 7:
 
 `show_level = 4` zeigt alle Einträge bis einschließlich Level 4 (Vorsicht). `show_level = 7` zeigt alle Einträge.
 
-### Level 9 – Gefiltertes Volllog
+### virtueller Loglevel 9 - Gefiltertes Volllog
 
-`show_level = 9` ist ein virtueller Level: Er zeigt alle Einträge (wie Level 7), blendet aber die unter `exclude_types` eingetragenen Event-Typen aus. Dies ist besonders nützlich, da `DHCPD`- und `MESH`-Events durch das ständige An- und Abmelden von Clients sehr umfangreich werden können.
+`show_level = 9` ist ein virtueller Loglevel: Er zeigt alle Einträge (wie Level 7 'Debug'), blendet aber die unter `exclude_types` eingetragenen Event-Typen aus. Dies ist besonders nützlich, da `DHCPD`- und `MESH`-Events durch das ständige An- und Abmelden von Clients sehr umfangreich werden können.
 
 Die Header-Zeile des Logs zeigt an, welche Typen ausgeblendet wurden.
 
@@ -307,13 +312,21 @@ cleanup_reports = 7   # Reports älter als 7 Tage werden gelöscht (0 = deaktivi
 
 ```ini
 [Router]
+# IP des TP-Link Routers
+# passwort ist das Passwort der Router-Admin-Oberfläche
 router_ip        = 192.168.0.1
 password         = DEIN_ROUTER_PASSWORT
 
 [Database]
+# SQLite Datenbank kompatibel zu vx-info.py
+# Beide Skripte können dieselbe Datenbank nutzen
+# dazu in beiden configs den gleichen Pfad angeben
 db_name          = router_data.db
 
 [Email]
+# SMTP Server und Zugangsdaten des Providers
+# man kann sich einen eigenen Account nur für das Reportversenden und -empfangen einrichten
+# dann sind die Zugangsdaten völlig unabhängig vom Haupt-E-Mail-Account
 smtp_server      = smtp.example.com
 smtp_port        = 587
 sender_email     = sender@example.com
@@ -321,7 +334,8 @@ sender_password  = PASSWORD
 recipient_email  = recipient@example.com
 
 [Modul]
-ai_analysis      = True
+# True das Modul ist aktiviert / False das Modul ist deaktiviert
+ai_analysis      = True 
 reconnects       = True
 line_analysis    = True
 downstream_chart = True
@@ -331,13 +345,18 @@ snr_heatmap      = True
 event_log        = True
 
 [AI]
-ai_provider = gemini        # "gemini" oder "AppleShortcuts"
+# diese Daten werden vom Setupskript eingetragen
+ai_provider = gemini
 ai_api_key  = DEIN_GEMINI_API_KEY
 
 [Analyse]
+# regelbasierte Analyse der Routerevent-Logs
 report_disconnects_level = 1
 
 [Charts]
+# Verlaufsdiagramm erfaßter DSL-Daten
+# die Feldnamen kann man im Skript unter
+# class DatabaseManager => def _create_tables einsehen
 hours_back       = 48
 start_hour       = 0
 table_1          = dsl
@@ -346,14 +365,26 @@ label_1          = SNR Downstream (dB)
 moving_average_days = 7
 
 [Events]
-hours_back       = 24
-start_hour       = 0
-exclude_types    = Mesh, DHCPD, VoIP
-show_level       = 4
+# Zeitraum für das Routereventlog und die AI Analyse
+hours_back = 24      # Zeitraum der Events in Stunden gemessen vom Zeitpunkt der Reportgenerierung
+start_hour = 0       # Startstunde der Events (0 = Mitternacht)
+
+# Ausgeschlossene Event-Typen für das Log und die Analyse
+exclude_types = Mesh, DHCPD, VoIP
+
+# Log Level Filter: 0 Notfall   1 Alarm    2 Kritisch  3 Fehler 
+#                   4 Vorsicht  5 Hinweis  6 Info      7 Debug (zeigt alles)
+#                   9 zeigt alles wie 7 Debug aber filtert die 'exclude_types' aus
+show_level = 4      # bis einschließlich dieses Levels anzeigen
+
+cleanup_excludes = 3 # Tage bis alte Events vom Typ 'exclude_types' aus der Datenbank gelöscht werden
 
 [Reports]
+# Alte Tagesreports löschen (0 = deaktiviert)
 cleanup_reports  = 7
 
 [Language]
-lang = de
+# Ausgabesprache des Tagesreports
+# de = Deutsch, en = Englisch
+lang = de 
 ```

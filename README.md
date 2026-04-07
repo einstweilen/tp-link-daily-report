@@ -19,7 +19,7 @@ Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.
 <img src="docu/images/sr-complete.png" alt="Beispiel Statusreport">
 
 </details>
-* Die Reportsprache kann zwischen Deutsch und Englisch umgeschaltet werden
+* Der Report kann zwischen Deutsch und Englisch umgeschaltet werden
 * mehr zu den Einzelbestandteilen des Reports siehe<br>
 [Details zum Statusreport](docu/statusreport_doku.md)
 <br>
@@ -107,9 +107,9 @@ Update abgeschlossen.
 
 ---
 
-Als funktionale Erweiterung des TP-Link Reports kann der [VX-Info Tracker](https://github.com/einstweilen/tp-link-vx231v/blob/main/vx-info.md) betrachtet werden. Beide, Report und Tracker, nutzen die gleiche Datenstruktur, ein Wechsel ist jederzeit möglich, bereits erfaßte Daten lassen sich in beide Richtungen weiter verwenden.<br>
+Die funktionale Erweiterung des TP-Link Reports ist der [VX-Info Tracker](https://github.com/einstweilen/tp-link-vx231v/blob/main/vx-info.md). Beide, Report und Tracker, nutzen die gleiche Datenstruktur, ein Wechsel ist jederzeit möglich, bereits erfaßte Daten lassen sich durch Eintragen des entsprechenden Pfads in der config.ini in beide Richtungen weiter verwenden.
 Der VX-Info Tracker unterstützt zusätzlich zur Datenerfassung über die Third-Party-API auch die Erfassung per Scraping der Routeroberfläche und optional - bei aktivierten Superadmin-Account - auch per SNMP/Telnet und nutzt automatisch immer die schnellste verfügbare Methode.
 
 ---
 
-### Getestet unter MacOS und Debian/DietPi mit einem TP-Link VX231v, andere TP-Link Router können abweichen
+*Getestet unter MacOS und Debian/DietPi mit einem TP-Link VX231v, andere TP-Link Router können abweichen*

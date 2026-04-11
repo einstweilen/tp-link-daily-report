@@ -500,29 +500,110 @@ class DatabaseManager:
         with sqlite3.connect(self.db_path) as conn:
             conn.executemany("INSERT OR REPLACE INTO clients (mac, time_ut, type, hostname, ip, signal_strength, is_connected, bytes_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", batch)
 
-    def insert_events_from_log(self, text):
-        if not text: return 0
-        added = 0
+    def insert_events_from_log(self, logcontent_or_path):
+        """Importiert Router-Log-Zeilen mit Boot-Timestamp-Korrektur (nur natives Format)."""
+        from pathlib import Path
+        if isinstance(logcontent_or_path, str) and '\n' in logcontent_or_path:
+            lines = logcontent_or_path.splitlines()
+        else:
+            logpath = Path('logs') / logcontent_or_path
+            if not logpath.exists(): return 0
+            with open(logpath, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+
+        parsed_events = []
+        for line in lines:
+            event = self._parse_router_log_line(line)
+            if event:
+                parsed_events.append(event)
+
+        if not parsed_events:
+            return 0
+
+        normalized_events = self._normalize_router_log_timestamps(parsed_events)
+        if not normalized_events:
+            return 0
+
+        inserted_count = 0
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            for line in text.splitlines():
-                s = line.strip()
-                if len(s) > 20 and s.startswith('202'):
-                    try:
-                        dt = datetime.strptime(s[:19], '%Y-%m-%d %H:%M:%S')
-                        rest = s[20:]
-                        if rest.startswith('['):
-                            rb = rest.find(']')
-                            lvl = int(rest[1:rb])
-                            payload = rest[rb+1:].strip()
-                            sep = payload.find(': ')
-                            if sep > 0:
-                                typ, msg = payload[:sep].strip(), payload[sep+2:].strip()
-                                cursor.execute("INSERT OR IGNORE INTO events (time_ut, level_id, type, event_text) VALUES (?, ?, ?, ?)",
-                                               (int(dt.timestamp()), lvl, typ, msg))
-                                added += cursor.rowcount
-                    except: pass
-        return added
+            for e in normalized_events:
+                cursor.execute(
+                    'INSERT OR IGNORE INTO events (time_ut, level_id, type, event_text) VALUES (?, ?, ?, ?)',
+                    (e['time_ut'], e['level_id'], e['type'], e['event_text']))
+                inserted_count += cursor.rowcount
+
+        return inserted_count
+
+    def _parse_router_log_line(self, line):
+        """Parst eine native Router-Log-Zeile: 2026-10-10 10:23:47 [6] DHCPD: Text..."""
+        s = line.strip()
+        if not s or len(s) < 19:
+            return None
+        try:
+            dt = datetime.strptime(s[:19], '%Y-%m-%d %H:%M:%S')
+            rest = s[20:].strip()
+            if not rest.startswith('['):
+                return None
+            rb = rest.find(']')
+            if rb <= 1:
+                return None
+            level_id = int(rest[1:rb])
+            payload = rest[rb + 1:].strip()
+            sep = payload.find(': ')
+            if sep <= 0:
+                return None
+            return {
+                'dt': dt,
+                'time_ut': int(dt.timestamp()),
+                'level_id': level_id,
+                'type': payload[:sep].strip(),
+                'event_text': payload[sep + 2:].strip(),
+            }
+        except Exception:
+            return None
+
+    def _normalize_router_log_timestamps(self, events):
+        """Korrigiert falsche Boot-Timestamps am Log-Anfang via Heuristik.
+
+        Der Router schreibt beim Booten (solange die Uhrzeit noch nicht synchronisiert
+        ist) Events mit falschem Timestamp. Sobald die Zeit stimmt, entsteht ein großer
+        positiver Sprung (>= 6h). Alle Events VOR diesem Sprung werden um das gleiche
+        Delta verschoben, sodass sie zeitlich korrekt eingeordnet werden.
+        """
+        if len(events) < 2:
+            return events
+
+        min_anchor_jump_seconds = 6 * 3600
+        max_future_skew_seconds = 600
+
+        corrected = [dict(e) for e in events]
+        now_ut = int(time.time())
+        n = len(corrected)
+
+        for idx in range(1, n):
+            prev_ev = corrected[idx - 1]
+            curr_ev = corrected[idx]
+            delta = curr_ev['time_ut'] - prev_ev['time_ut']
+
+            if delta < min_anchor_jump_seconds:
+                continue
+            if curr_ev['time_ut'] > (now_ut + max_future_skew_seconds):
+                continue
+            if delta <= 0:
+                continue
+
+            for k in range(0, idx):
+                corrected[k]['time_ut'] += delta
+                corrected[k]['dt'] = datetime.fromtimestamp(corrected[k]['time_ut'])
+
+            # Plausibilitätsprüfung: wenn die korrigierten Events immer noch
+            # zeitlich nach dem Anchor liegen, verwerfen
+            if corrected[idx - 1]['time_ut'] > corrected[idx]['time_ut']:
+                return events
+            return corrected
+
+        return events
 
     def purge_old_events(self, days, event_types, debug=False):
         if days <= 0 or not event_types: return

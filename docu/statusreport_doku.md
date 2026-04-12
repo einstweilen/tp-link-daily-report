@@ -121,6 +121,21 @@ Der Zeitstrahl visualisiert Verbindungsereignisse der letzten Tage (der Zeitraum
 
 Oberhalb der Symbole wird die Dauer des jeweiligen Verbindungsausfalls in Sekunden angezeigt. Dauert der Reconnect ungewöhnlich lange, wird dies in der Leitungsanalyse genauer untersucht.
 
+Der Beispielscreenshot zeigt drei besondere Ereignisse:
+
+(1) Am Vortag tägliche **Provider-Zwangstrennung** um 02:00 Uhr **Dauer 29 Sekunden**<br>
+Der Provider, konkret 1&1, trennt auch bei VDSL Anschlüssen 24 Stunden nach dem letzten Reconnect automatisch die Verbindung, so dass ein kompletter neuer Verbindungsaufbau erforderlich ist.<br>
+Dieser dauert regelmäßig ca. 30 Sekunden, 29 Sekunden im vorliegenden Fall.
+
+(2) Einspielen einer neuen **Firmware** um 13:00 Uhr<br>
+Zum Abschluß der Installation einer neuen Firmware, konkret im Beispiel Update von 231.01 auf 231.04, wird der Router neu gestartet. Da der Router direkt nach dem Neustart und vor erfolgtem Connect noch keine aktuelle Zeit über das Internet erhalten hat, verwednet er im Log als Eventdatum das Datum der Veröffentlichung der Firmware.
+Exkurs: Beim Import des Logs korrigiert das Skript die falschen Zeitstempel der Ereignisse durch Annäherung über Rückwärtsrechnung ab dem ersten wieder korrekt datierten Event. Daher wird keine Dauer im Verbindungszeitstrahl angegeben.<br>
+Man kann von **ca. 3 Minuten** ausgehen, was je nach Provider, DSLM, Routermodell und Firmware variieren kann.
+
+(3) **Automatische Trennung** durch den Router um 03:30 Uhr **Dauer 4 Sekunden**<br>
+Ist unter Erweiterte Einstellungen > DSL-WAN > DSL-Wan Schnittstelle 'Bearbeiten' im Abschnitt Verbindungsmodus 'Immer online' ausgewählt und die Option 'Automatisch trennen und wiederverbinden um … Uhrzeit' aktiviert, dauert die Trennung und Wiederverbindung in der Regel nur wenige Sekunden, im vorliegenden Fall 4 Sekunden.
+
+
 ---
 
 ## Leitungsanalyse - regelbasiert

@@ -14,13 +14,16 @@ Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.
 * Speicherung der Daten in einer Datenbank
 * Automatisierte Generierung und Versand von täglichen Statusreports
 <details>
+
 <summary><i>Vollständigen Beispielreport anzeigen</i></summary>
 
-<img src="docu/images/sr-complete.png" alt="Beispiel Statusreport">
+<img src="docu/images/sr-complete.jpg" alt="Beispiel Statusreport">
 
 </details>
+
 * Der Report kann zwischen Deutsch und Englisch umgeschaltet werden
 * mehr zu den Einzelbestandteilen des Reports siehe<br>
+
 [Details zum Statusreport](docu/statusreport_doku.md)
 <br>
 
@@ -31,6 +34,7 @@ curl -sL https://raw.githubusercontent.com/einstweilen/tp-link-daily-report/main
 <br>
 
 <details>
+
 <summary>Beispielablauf der Schnellen Installation</summary>
 
 ```

@@ -109,19 +109,23 @@ Diese Datei kann dann zur Analyse manuell in eine beliebige KI eingefügt werden
 
 ![Reconnects](images/sr-04-reconnect-zeitstrahl.png)
 
+![Reconnects nach Zeitplan](images/sr-04a-reconnect-zeitstrahl.png)
+
 Aktiviert durch `reconnects = True` im Abschnitt `[Modul]`.
 
-Der Zeitstrahl visualisiert Verbindungsereignisse der letzten Tage (der Zeitraum wird über `[Charts] hours_back` festgelegt). Drei Ereignistypen werden unterschieden:
+Der Zeitstrahl visualisiert Verbindungsereignisse der letzten Tage (der Zeitraum wird über `[Charts] hours_back` festgelegt).<br>Fünf Ereignistypen werden unterschieden:
 
 | Symbol | Farbe | Bedeutung |
-|--------|-------|-----------|
-| ✕ | Rot | Provider-Trennung (`LCP down`) |
-| ● | Orange | DSL-Synchronisationsverlust |
-| \| | Grau | Verbindungswiederherstellung |
+|:---:|-------|-----------|
+| **$\Large\color{red}{\textbf{✕}}$** | Rot | Provider-Trennung (`LCP down` / `DSL Link Status is DOWN`) |
+| **$\Large\color{yellow}{\textbf{●}}$** | Gelb | DSL-Synchronisierung läuft (`Initializing` / `EstablishingLink`) |
+| **$\Large\color{teal}{\textbf{\|}}$** | Türkis | Verbindungswiederherstellung (`DSL Link Status is UP` / `PAP AuthAck` / `IPCP ConfAck`)|
+| **$\Large\color{orange}{\textbf{♦}}$** | Orange | Manuelle Trennung (`User request`) |
+| **$\Large\color{purple}{\textbf{■}}$** | Lila | Automatische Trennung um der 24h Zwangstrennung zuvor zu kommen (`User request`)|
 
 Oberhalb der Symbole wird die Dauer des jeweiligen Verbindungsausfalls in Sekunden angezeigt. Dauert der Reconnect ungewöhnlich lange, wird dies in der Leitungsanalyse genauer untersucht.
 
-Der Beispielscreenshot zeigt drei besondere Ereignisse:
+**Die Beispielscreenshots zeigen vier besondere Ereignisse:**
 
 (1) Am Vortag tägliche **Provider-Zwangstrennung** um 02:00 Uhr **Dauer 29 Sekunden**<br>
 Der Provider, konkret 1&1, trennt auch bei VDSL Anschlüssen 24 Stunden nach dem letzten Reconnect automatisch die Verbindung, so dass ein kompletter neuer Verbindungsaufbau erforderlich ist.<br>
@@ -135,6 +139,8 @@ Man kann von **ca. 3 Minuten** ausgehen, was je nach Provider, DSLM, Routermodel
 (3) **Automatische Trennung** durch den Router um 03:30 Uhr **Dauer 4 Sekunden**<br>
 Ist unter Erweiterte Einstellungen > DSL-WAN > DSL-Wan Schnittstelle 'Bearbeiten' im Abschnitt Verbindungsmodus 'Immer online' ausgewählt und die Option 'Automatisch trennen und wiederverbinden um … Uhrzeit' aktiviert, dauert die Trennung und Wiederverbindung in der Regel nur wenige Sekunden, im vorliegenden Fall 4 Sekunden.
 
+(4) **Planmäßige** Reconnects **Dauer 4 Sekunden**<br>
+Ähnlich zu **(3)** aber erst nach ein paar Tagen eingezeichnet, sind die automatischen Verbindungstrennungen, um der 24h Zwnagstrennung durch den Provider zuvor zu kommen. Das Skript erkennt, wenn ein Reconnect an aufeinanderfolgenden Tagen zur gleichen Uhrzeit auftritt und markiert diese mit einem lila Quadrat.
 
 ---
 

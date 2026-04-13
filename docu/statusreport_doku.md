@@ -140,7 +140,7 @@ Man kann von **ca. 3 Minuten** ausgehen, was je nach Provider, DSLM, Routermodel
 Ist unter Erweiterte Einstellungen > DSL-WAN > DSL-Wan Schnittstelle 'Bearbeiten' im Abschnitt Verbindungsmodus 'Immer online' ausgewählt und die Option 'Automatisch trennen und wiederverbinden um … Uhrzeit' aktiviert, dauert die Trennung und Wiederverbindung in der Regel nur wenige Sekunden, im vorliegenden Fall 4 Sekunden.
 
 (4) **Planmäßige** Reconnects **Dauer 4 Sekunden**<br>
-Ähnlich zu **(3)** aber erst nach ein paar Tagen eingezeichnet, sind die automatischen Verbindungstrennungen, um der 24h Zwnagstrennung durch den Provider zuvor zu kommen. Das Skript erkennt, wenn ein Reconnect an aufeinanderfolgenden Tagen zur gleichen Uhrzeit auftritt und markiert diese mit einem lila Quadrat.
+Ähnlich zu **(3)** aber erst nach ein paar Tagen eingezeichnet, sind die automatischen Verbindungstrennungen, um der 24h Zwangstrennung durch den Provider zuvor zu kommen. Das Skript erkennt, wenn ein Reconnect an aufeinanderfolgenden Tagen zur gleichen Uhrzeit auftritt und markiert diese mit einem lila Quadrat.
 
 ---
 
@@ -409,3 +409,7 @@ cleanup_reports  = 7
 # de = Deutsch, en = Englisch
 lang = de 
 ```
+
+---
+
+[Zurück zur Übersicht](../README.md) | [Release Notes](release_notes.md)

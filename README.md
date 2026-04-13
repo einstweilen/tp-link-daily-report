@@ -106,7 +106,7 @@ Update abgeschlossen.
 </details>
 
 
-[Die einzelnen Module des Statusreports im Detail](docu/statusreport_doku.md)
+[Die einzelnen Module des Statusreports im Detail](docu/statusreport_doku.md) | [Release Notes](docu/release_notes.md)
 
 
 ---

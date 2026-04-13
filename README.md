@@ -6,7 +6,7 @@
 Ein Python-Skript (`tp-report.py`) zur automatisierten Erfassung der DSL, Client und Logdaten des Routers.<br>
 Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.
 
-![Vorschau Statusreport](docu/images/sr-complete-small.jpg)
+[![Vorschau Statusreport](docu/images/sr-complete-small.jpg)](docu/statusreport_doku.md)
 
 
 **Funktionen:**

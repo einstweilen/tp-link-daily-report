@@ -24,7 +24,7 @@ Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.
 * Der Report kann zwischen Deutsch und Englisch umgeschaltet werden
 * mehr zu den Einzelbestandteilen des Reports siehe<br>
 
-[Details zum Statusreport (Anklicken zum Aufklappen)](docu/statusreport_doku.md)
+[Details zum Statusreport - zum Aufklappen anklicken](docu/statusreport_doku.md)
 <br>
 
 **Einfache Installation:**

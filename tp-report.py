@@ -1723,16 +1723,39 @@ class Reporter:
         exclude = [t.strip() for t in self.config.get('Events', 'exclude_types', fallback='').split(',') if t.strip()]
         filtered_events = self._get_events(hours=48, exclude_types=exclude)
         events_as_text = ", ".join(str(event) for event in filtered_events)
-        prompt = """Du bist ein Senior-Diagnostiker für Breitbandtechnik. Deine Aufgabe ist eine Anomalie-Erkennung, kein Statusreport.
-        Analyse-Vorgabe: Betrachte die übergebenen DSL-Daten als Gesamtsystem. Ignoriere Einzelaspekte (wie die 3-Uhr-Trennung),
-        sofern sie nicht in Kombination mit anderen Werten auf eine instabile Leitung hindeuten.
-        Ausgabe-Regeln:        
-        Relevanz-Filter: Antworte nur, wenn die Datenlage eine technische Verschlechterung oder ein drohendes Problem nahelegt.
-        Wenn alles stabil ist, antworte ausschließlich mit: 'Verbindung ist stabil.'
-        Synthese-Pflicht: Fasse deine Erkenntnisse in maximal zwei bis drei Sätzen als Fließtext zusammen.
-        Verbotsliste: Keine Aufzählungen, keine Wiederholung von Rohdaten, keine Kommentare zu Routine-Events (Eine Trennung pro Tag ist O.K.!)oder fehlenden Updates.
-        Fokus: Benenne nur das 'Warum' der Störung (z.B. 'Kombination aus sinkendem SNR und steigenden Fehlern deutet auf Leitungsstörung hin').
-        TOP PRIO!!! Prüfe, ob Du tatsächlich maximal drei Sätze verwendet hast, sonst erneut bearbeiten!
+        prompt = """Du bist ein Senior-Diagnostiker für DSL-/VDSL-Leitungen. Deine Aufgabe ist ausschließlich die Erkennung technischer Auffälligkeiten und Verschlechterungen in den übergebenen Leitungs- und Ereignisdaten.
+        Ziel:
+        Bewerte, ob die Daten auf eine instabile oder verschlechterte Leitung hindeuten. Erstelle keinen allgemeinen Statusreport und keine Beschreibung des Reports.
+
+        Bewertungslogik:
+        Beurteile die Daten als Gesamtsystem. Ein einzelnes Routineereignis ist kein Problem, solange keine weiteren Auffälligkeiten es stützen.
+        Als unkritisch gelten insbesondere:
+        - eine einzelne tägliche Leitungsrennung,
+        - geplante oder regelmäßig wiederkehrende Router-Trennungen,
+        - normale Reconnects ohne Verschlechterung der DSL-Werte.
+
+        Als relevant gelten nur Muster oder Kombinationen wie:
+        - sinkender oder dauerhaft niedriger Downstream-SNR,
+        - steigende Fehlerwerte oder Fehler-Bursts,
+        - ungewöhnlich häufige Reconnects,
+        - verlängerte Wiederverbindungszeiten,
+        - Profilrückfall oder reduzierte Sync-Rate nach Trennung,
+        - zeitliche Korrelation mehrerer negativer Signale.
+
+        Ausgabe-Regeln:
+        - Wenn keine belastbare Auffälligkeit vorliegt, antworte exakt: Verbindung ist stabil.
+        - Wenn eine Auffälligkeit vorliegt, antworte mit maximal drei kurzen Sätzen als Fließtext.
+        - Beschreibe nur Befund und wahrscheinlichste technische Ursache.
+        - Erwähne nur Ereignisse, die zur Diagnose beitragen.
+        - Keine Aufzählungen.
+        - Keine Rohdatenwiederholung.
+        - Keine Erwähnung fehlender Firmware, Updates oder belangloser Routineereignisse.
+        - Keine Spekulationen ohne Datengrundlage.
+        - Wenn die Evidenz schwach oder uneinheitlich ist, benenne das ausdrücklich knapp, z. B. 'Hinweis auf …, aber nicht eindeutig'.
+
+        Qualitätskontrolle vor Ausgabe:
+        - Prüfe, ob die Antwort entweder exakt 'Verbindung ist stabil.' ist oder aus höchstens drei Sätzen besteht.
+        - Entferne jeden Satz ohne direkten Diagnosewert.
         """
         
         if self.lang == 'en':

@@ -79,7 +79,7 @@ Ist ein Update verfügbar, werden angezeigt:
 
 ---
 
-## Auf einen Blick – KI-Analyse
+## Auf einen Blick - KI-Analyse
 
 ![KI-Analyse](images/sr-03-auf-einen-blick.png)
 

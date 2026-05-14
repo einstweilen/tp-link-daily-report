@@ -24,7 +24,7 @@ Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.
 * Der Report kann zwischen Deutsch und Englisch umgeschaltet werden
 * mehr zu den Einzelbestandteilen des Reports siehe<br>
 
-[Details zum Statusreport - zum Aufklappen anklicken](docu/statusreport_doku.md)
+[Details zum Statusreport](docu/statusreport_doku.md)
 <br>
 
 **Einfache Installation:**
@@ -35,7 +35,7 @@ curl -sL https://raw.githubusercontent.com/einstweilen/tp-link-daily-report/main
 
 <details>
 
-<summary>Beispielablauf der Schnellen Installation</summary>
+<summary>Beispielablauf der Schnellen Installation (Anklicken zum Aufklappen)</summary>
 
 ```
 curl -sL https://raw.githubusercontent.com/einstweilen/tp-link-daily-report/main/install_report.sh | bash

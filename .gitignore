@@ -26,9 +26,13 @@ config-report.ini
 
 # Datenbanken (SQLite)
 router_data.db
+router_data_bu.db
 *.db-shm
 *.db-wal
 *.sqlite-journal
+
+# Reasonix (KI-Assistenz-Cache)
+.reasonix/
 
 # Temporäre Dateien des Projekts
 test.json

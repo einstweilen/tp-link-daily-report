@@ -864,6 +864,18 @@ class Reporter:
                                 closest = net
                         if closest:
                             network = closest
+                    # Fallback: Netzwerk-Zugehörigkeit über die IP in der clients-Tabelle
+                    if network == 'home':
+                        try:
+                            _, ip_rows = self.db._run_query(
+                                "SELECT ip FROM clients WHERE mac = ?", params=(mac,)
+                            )
+                            if ip_rows and ip_rows[0][0]:
+                                client_ip = ip_rows[0][0]
+                                if not client_ip.startswith(home_subnet):
+                                    network = 'guest'
+                        except Exception:
+                            pass
                     sessions.append({'start': ts, 'end': None, 'network': network})
             elif is_end:
                 if sessions and sessions[-1]['end'] is None:
@@ -1525,7 +1537,7 @@ class Reporter:
 
         return img_str
 
-    def _generate_snr_variance_html(self, table_name, field_name, label_name):
+    def _generate_snr_variance_img(self, table_name, field_name, label_name):
         three_months_start = int((datetime.now() - timedelta(days=90)).timestamp())
         _, rows = self.db._run_query(f"SELECT time_ut, {field_name} FROM {table_name} WHERE time_ut >= ? AND {field_name} > 0", [three_months_start])
         
@@ -1548,46 +1560,76 @@ class Reporter:
         if not hourly_avg:
             return ""
             
+        hourly_data = {h: [] for h in range(24)}
+        for ts, val in rows:
+            try:
+                hour = datetime.fromtimestamp(int(ts)).hour
+                hourly_data[hour].append(float(val))
+            except:
+                pass
+                
+        hourly_avg = {}
+        for h, vals in hourly_data.items():
+            if vals:
+                hourly_avg[h] = sum(vals) / len(vals)
+                
+        if not hourly_avg:
+            return ""
+            
         min_avg = min(hourly_avg.values())
         max_avg = max(hourly_avg.values())
         delta = max_avg - min_avg
         
-        html = f'''
-        <div style="border: 1px solid #ddd; background-color: #fcfcfc; padding: 15px; border-radius: 5px; margin-bottom: 5px;">
-            <div style="font-size: 14px; font-weight: bold; color: #4acbd6; margin-bottom: 5px; font-family: sans-serif;">{self.t['daily_fluctuations']} {label_name} <span style="font-size: 12px; font-weight: normal; color: #666;">{self.t['last_3_months']}</span></div>
-            <div style="font-size: 12px; color: #555; margin-bottom: 10px; font-family: sans-serif;">
-                {self.t['max_hourly_fluctuation']} <strong>{delta:.2f}</strong> 
-                <span style="color: #888; font-size: 11px;">{self.t['lower_is_better']}</span>
-            </div>
-            <div style="display: flex; width: 100%; height: 30px; border-radius: 3px; overflow: hidden; border: 1px solid #ccc;">
-        '''
+        # PNG-Bild via matplotlib generieren
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+        
+        fig, ax = plt.subplots(figsize=(10, 0.8))
+        ax.set_xlim(0, 24)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
         
         for h in range(24):
             avg = hourly_avg.get(h, None)
             if avg is None:
-                color = "#eeeeee"
-                title = f"{h:02d}:00 - {self.t['no_data']}"
+                color = '#eeeeee'
             else:
                 if max_avg > min_avg:
                     score = (avg - min_avg) / delta
                 else:
                     score = 0.5
-                hue = int(score * 120)
-                color = f"hsl({hue}, 100%, 45%)"
-                title = f"{h:02d}:00 - Ø {avg:.2f}"
+                # Grün (0%) → Gelb (50%) → Rot (100%)
+                r = min(1.0, score * 2)
+                g = min(1.0, (1 - score) * 2)
+                b = 0.0
+                color = (r, g, b)
             
-            html += f'<div style="flex: 1; background-color: {color};" title="{title}"></div>'
-            
-        html += '''
-            </div>
-            <div style="display: flex; justify-content: space-between; width: 100%; font-size: 10px; color: #888; margin-top: 4px; font-family: sans-serif;">
-                <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span>
-            </div>
-        </div>
-        '''
-        return html
-
-        return html
+            rect = mpatches.Rectangle((h, 0), 1, 1, linewidth=0.5, edgecolor='white', facecolor=color)
+            ax.add_patch(rect)
+        
+        # Titel (kompakt, über dem Chart)
+        title = f"{self.t['daily_fluctuations']} {label_name} {self.t['last_3_months']}"
+        ax.text(12, 1.6, title, fontsize=11, ha='center', va='bottom', fontweight='bold', color='#4acbd6')
+        
+        # Delta-Angabe
+        delta_text = f"{self.t['max_hourly_fluctuation']} {delta:.2f} dB"
+        ax.text(12, 1.2, delta_text, fontsize=9, ha='center', va='bottom', color='#555')
+        
+        # Stundenmarkierungen
+        for hour_pos, label in [(0, '00:00'), (6, '06:00'), (12, '12:00'), (18, '18:00'), (24, '24:00')]:
+            ax.text(hour_pos, -0.3, label, fontsize=8, ha='center', va='top', color='#888')
+        
+        plt.subplots_adjust(left=0.02, right=0.98, top=0.65, bottom=0.2)
+        
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', transparent=False, facecolor='white')
+        buf.seek(0)
+        img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
+        plt.close(fig)
+        
+        return img_str
     
     def _calculate_median(self, data):
         if not data: return 0.0
@@ -1956,13 +1998,15 @@ class Reporter:
                     html += f"<tr><td style='padding: 0 20px;'>{stats_html}</td></tr>"
 
         # 5. Tagesschwankungschart (SNR Heatmap)
+        variance_img = None
         if self.config.getboolean('Modul', 'snr_heatmap', fallback=True):
             t_table = self.config.get('Charts', 'table_1', fallback='dsl')
             t_field = self.config.get('Charts', 'field_1', fallback='downstream_noise_margin')
             t_label = self.config.get('Charts', 'label_1', fallback=t_field)
-            variance_html = self._generate_snr_variance_html(t_table, t_field, t_label)
-            if variance_html:
-                html += f"<tr><td style='padding: 10px 20px;'>{variance_html}</td></tr>"
+            variance_img = self._generate_snr_variance_img(t_table, t_field, t_label)
+            if variance_img:
+                img_src = f"cid:snr_variance_img" if send_email else f"data:image/png;base64,{variance_img}"
+                html += f"<tr><td style='padding: 10px 20px;'><table width='100%'><tr><td style='text-align: center;'><img src='{img_src}' style='width: 100%; max-width: 860px;'></td></tr></table></td></tr>"
 
         # 6. Anwesenheits GANTT Chart
         if self.config.getboolean('Modul', 'presence', fallback=True):
@@ -2049,6 +2093,10 @@ class Reporter:
             if gantt:
                 img = MIMEImage(base64.b64decode(gantt))
                 img.add_header('Content-ID', '<gantt_img>')
+                msg_rel.attach(img)
+            if variance_img:
+                img = MIMEImage(base64.b64decode(variance_img))
+                img.add_header('Content-ID', '<snr_variance_img>')
                 msg_rel.attach(img)
             for idx, (_, data) in enumerate(charts):
                 img = MIMEImage(base64.b64decode(data))

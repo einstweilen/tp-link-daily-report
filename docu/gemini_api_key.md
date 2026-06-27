@@ -8,6 +8,10 @@ Um im Statusreport eine KI-gestützte Analyse der DSL-Daten und des Routerlogs d
 
 Der unter [Setup & Installation: AI-Analyse](../setup.md#option-2-manuelle-einrichtung-und-konfiguration) beschriebene Weg, am Mac einen AI Shortcut mit höherer Privacy zu nutzen, funktioniert weiterhin!
 
+!!! hint "Erwarteter Token-Verbrauch pro Statusreport"
+    Die Generierung einer KI-Analyse der DSL-Daten und des Routerlogs verbraucht ca. 2.000 bis 2.500 Token. Monatlich sind das maximal ca. 75.000 Token. Somit bleibt man bei einem täglichen Statusreport weit unter dem Monatslimit von einer Million kostenlos nutzbarer Token.
+
+
 ## Schritt 1: Google AI Studio öffnen
 Wenn das Skript auf einem Rechner mit GUI Oberfläche ausgeführt wird, wird das *Google AI Studio* automatisch während der Installation vom Skript im Browser geöffnet.<br>
 Andernfalls das *Google AI Studio* unter [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) im Browser öffnen und mit einem regulären Google-Konto einloggen.

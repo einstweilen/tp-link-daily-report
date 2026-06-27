@@ -2,6 +2,10 @@
 
 Funktionellen Änderungen, Features und wichtigen Verbesserungen des TP-Link Status Report Projekts im Überblick.
 
+## 27.06.2026
+- **Bugfix**: Gastnetz-Clients werden in der Anwesenheitsauswertung nicht mehr fälschlich als Heimnetz angezeigt.
+- **Bugfix**: SNR-Tagesschwankungen werden jetzt als PNG-Grafik dargestellt und sind auch in Google Mail auf Android sichtbar.
+
 ## 11.04.2026
 - **Feature**: Automatischer Fix von falschen Event-Zeitstempeln nach einem Router-Reboot integriert.
 

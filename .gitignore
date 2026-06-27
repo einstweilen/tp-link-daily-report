@@ -49,6 +49,3 @@ site/
 
 # Custom: Dateien ignorieren, deren Name mit 'nogit' beginnt
 nogit*
-
-# SSH-Keys (projektbezogen)
-.ssh-github-key

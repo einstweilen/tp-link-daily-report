@@ -1600,9 +1600,9 @@ class Reporter:
                     score = (avg - min_avg) / delta
                 else:
                     score = 0.5
-                # Grün (0%) → Gelb (50%) → Rot (100%)
-                r = min(1.0, score * 2)
-                g = min(1.0, (1 - score) * 2)
+                # Niedriger SNR = rot (schlecht), hoher SNR = grün (gut)
+                r = min(1.0, (1 - score) * 2)
+                g = min(1.0, score * 2)
                 b = 0.0
                 color = (r, g, b)
             

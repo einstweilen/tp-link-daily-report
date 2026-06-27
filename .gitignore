@@ -25,8 +25,7 @@ config-report.ini
 !config-report.ini.sample
 
 # Datenbanken (SQLite)
-router_data.db
-router_data_bu.db
+*.db
 *.db-shm
 *.db-wal
 *.sqlite-journal

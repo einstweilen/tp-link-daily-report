@@ -865,17 +865,18 @@ class Reporter:
                         if closest:
                             network = closest
                     # Fallback: Netzwerk-Zugehörigkeit über die IP in der clients-Tabelle
-                    if network == 'home':
-                        try:
-                            _, ip_rows = self.db._run_query(
-                                "SELECT ip FROM clients WHERE mac = ?", params=(mac,)
-                            )
-                            if ip_rows and ip_rows[0][0]:
-                                client_ip = ip_rows[0][0]
-                                if not client_ip.startswith(home_subnet):
-                                    network = 'guest'
-                        except Exception:
-                            pass
+                    try:
+                        _, ip_rows = self.db._run_query(
+                            "SELECT ip FROM clients WHERE mac = ?", params=(mac,)
+                        )
+                        if ip_rows and ip_rows[0][0]:
+                            client_ip = ip_rows[0][0]
+                            if client_ip.startswith(home_subnet):
+                                network = 'home'
+                            else:
+                                network = 'guest'
+                    except Exception:
+                        pass
                     sessions.append({'start': ts, 'end': None, 'network': network})
             elif is_end:
                 if sessions and sessions[-1]['end'] is None:

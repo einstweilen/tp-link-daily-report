@@ -108,6 +108,7 @@ Update abgeschlossen.
 
 [Die einzelnen Module des Statusreports im Detail](docu/statusreport_doku.md) | [Release Notes](docu/release_notes.md)
 
+> **AI-Transparenzhinweis**<br>ca. 90% des Code wurden per KI Gemini/DeepSeek erstellt, kleinere direkte Anpassungen erfolgten per Hand
 
 ---
 

@@ -31,6 +31,10 @@ Nach dem ersten Start (oder durch `install_report.sh`) existiert diese Datei. Di
 *   **[AI]**: API Key für die automatische Analyse - Deaktivierung durch Umbenennen in [noAI]
 *   **[Language]**: Ausgabesprache des Tagesreports
 
+Die Datei enthält Zugangsdaten und ist per `.gitignore` vom Repository ausgeschlossen. Zweckmäßig ist
+`chmod 600 config-report.ini` (nur der Eigentümer darf lesen und schreiben); `install_report.sh` setzt das
+automatisch.
+
 ### Datenabruf und Laufzeit
 
 Das Skript liest die Routerdaten in dieser Reihenfolge:

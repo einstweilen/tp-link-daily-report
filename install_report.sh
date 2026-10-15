@@ -167,6 +167,9 @@ main() {
         success "$CONFIG_FILE existiert bereits."
     fi
 
+    # Enthält Zugangsdaten (Router, Mail, API-Key) - nur für den Eigentümer lesbar
+    chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+
     step "[4/7] Interaktive Router-Konfiguration"
     while true; do
         prompt_text "Wie lautet die IP-Adresse des Routers? [192.168.1.1]: "

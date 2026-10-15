@@ -10,6 +10,7 @@ Im Terminal
 curl -sL https://raw.githubusercontent.com/einstweilen/tp-link-daily-report/main/install_report.sh | bash
 ```
 ausführen, das Skript lädt den Installer herunter, erstellt das Verzeichnis `tp-report` und richtet alles Notwendige ein.
+Neben den Python-Paketen (u. a. `playwright`) wird dabei einmalig **Chromium** für den Headless-Browser installiert - das dauert ein paar Minuten und benötigt ca. 150 MB. Nachinstallieren lässt sich das jederzeit mit `playwright install chromium`.
 
 ---
 
@@ -23,10 +24,30 @@ Nach dem ersten Start (oder durch `install_report.sh`) existiert diese Datei. Di
 *   **[Router]**: IP-Adresse und Passwort des Routers.
 *   **[Database]**: SQLite Datenbank, kompatibel zu vx-info.py
 *   **[Email]**: SMTP-Daten für den E-Mail-Versand
+*   **[Modul]**: Ein-/Ausschalten der Report-Bausteine (KI-Analyse, Charts, Anwesenheit, ...) sowie `collect_clients` - siehe unten
 *   **[Charts]**: Festlegung, welcher DSL-Parameter im Bericht erscheinen sollen
 *   **[Events]**: Festlegung, welche Ereignisse im Bericht erscheinen sollen
+*   **[WebUI]**: Steuerung des Headless-Browsers (Aufwecken der Router-Tabellen, DSL-Fehlerzähler) - siehe unten
 *   **[AI]**: API Key für die automatische Analyse - Deaktivierung durch Umbenennen in [noAI]
 *   **[Language]**: Ausgabesprache des Tagesreports
+
+### Datenabruf und Laufzeit
+
+Das Skript liest die Routerdaten in dieser Reihenfolge:
+
+1.  **Router-API** (JSON über HTTPS) - System/Firmware, DSL-Werte, Clients, Routerlog. Das ist der Normalfall und dauert wenige Sekunden.
+2.  **Weboberfläche** (Headless-Browser) - nur wenn nötig: Die aktuelle Firmware liefert DSL-/Clientdaten erst, nachdem die Oberfläche sie angefragt hat (das Skript „weckt" sie dann einmal kurz auf), und die DSL-Fehlerzähler (CRC) gibt es ausschließlich dort.
+3.  **Lokaler ARP-Scan** - Ping-Sweep der eigenen Subnetze plus ARP-Tabelle, ohne SNMP und ohne Router-Login. Damit bleiben die Clients auch dann vollständig, wenn die Client-Tabellen des Routers leer sind. Einzeltest: `python3 -m arp_scan`.
+
+Diese Schalter verkürzen die Laufzeit deutlich:
+
+| Schlüssel | Wirkung |
+| :--- | :--- |
+| `[Modul] collect_clients = False` | keine Client-Abfrage, kein Netzplan-Aufwecken, kein ARP-Scan (schnellster Lauf; sinnvoll, wenn z. B. `vx-info.py` dieselbe Datenbank mit Clientdaten füllt) |
+| `[WebUI] crc_source = aus` | CRC-Werte nicht per Browser nachlesen (bleiben `0`) |
+| `[WebUI] warmup = aus` | Router-Tabellen nie per Browser aufwecken (dann ggf. keine DSL-Werte in diesem Lauf) |
+
+Mit beiden Abschaltungen läuft ein `--update` in ca. 4 Sekunden (statt 2-3 Minuten mit Browser).
 
 ### 2. KI-Analyse einrichten
 Der Daily Report kann die Leitungsdaten (SNR, Fehler, Reconnects) von einer KI analysieren lassen. Dazu ist ein kostenloser API Key von Google AI Studio erforderlich:

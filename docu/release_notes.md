@@ -2,6 +2,13 @@
 
 Funktionellen Änderungen, Features und wichtigen Verbesserungen des TP-Link Status Report Projekts im Überblick.
 
+## 15.10.2026
+- **Feature**: Firmware-Hinweis zeigt jetzt **alle** neueren Versionen statt nur der neuesten. Beim Sprung von 0.24 auf 0.26 wird damit auch der notwendige Zwischenschritt 0.25 mit seinen Release Notes angezeigt - inklusive der Reihenfolge (`0.25.0 ➜ 0.26.0`), in der aktualisiert werden muss.
+- **Anpassung**: Nach der Router-Firmware-Umstellung liefert der Router DSL-/Clientdaten erst, wenn die Weboberfläche sie angefragt hat. Das Skript erkennt leere Tabellen, weckt sie einmal kurz über die Weboberfläche (nur die DSL-Seite) und liest danach erneut.
+- **Neu**: Lokale ARP-Erkennung (`arp_scan.py`) als Client-Quelle - Ping-Sweep der eigenen Subnetze plus ARP-Tabelle, ohne SNMP und ohne Router-Login. Sie kann auch direkt getestet werden: `python3 -m arp_scan`.
+- **Konfiguration**: Neue Schalter in der `config-report.ini`: `[WebUI] warmup`/`crc_source`/`user` und `[Modul] collect_clients`. Details: [Installations-Anleitung](../tp-report-setup-guide.md).
+- **Schneller**: Chromium wird nur noch bei Bedarf gestartet (einmal pro Lauf statt zweimal), lädt keine Bilder/Schriften und läuft mit niedriger Priorität - Laufzeiten von 4 s statt 2-3 Minuten bei abgeschalteter Client-Erfassung.
+
 ## 27.06.2026
 - **Bugfix**: Gastnetz-Clients werden in der Anwesenheitsauswertung nicht mehr fälschlich als Heimnetz angezeigt.
 - **Bugfix**: SNR-Tagesschwankungen werden jetzt als PNG-Grafik dargestellt und sind auch in Google Mail auf Android sichtbar.

@@ -22,7 +22,12 @@ recipient_email  = EMPFAENGER_EMAIL@example.com
 
 [Modul]
 # True das Modul ist aktiviert / False das Modul ist deaktiviert
-ai_analysis      = True 
+ai_analysis      = True
+# Client-Erfassung beim --update/Report (False = schneller Lauf: keine Clientabfrage,
+# kein Aufwecken des Netzplans, kein ARP-Scan). Sinnvoll, wenn ein anderer Lauf
+# (z.B. vx-info.py) dieselbe Datenbank stündlich mit Clientdaten füllt.
+# Der Report-Header (Firmware/Uptime) wird weiterhin aktualisiert.
+collect_clients  = True
 reconnects       = True
 line_analysis    = True
 downstream_chart = True
@@ -30,6 +35,18 @@ client_presence  = True
 presence         = True
 snr_heatmap      = True
 event_log        = True
+
+[WebUI]
+# Benutzername der Router-Weboberfläche (meist 'admin')
+user = admin
+# Die Firmware ab 09/2026 füllt DSL-/Client-Tabellen erst, wenn die Weboberfläche sie
+# angefragt hat (die JSON-API liefert sonst dauerhaft leer). Bei leeren DSL-Daten wird
+# die Weboberfläche deshalb einmal per Headless-Browser geöffnet:
+#   auto = nur bei leeren Daten aufwecken (Standard) | aus = nie
+warmup = auto
+# Die DSL-Fehlerzähler (UCRC/DCRC) gibt es nur in der Weboberfläche:
+#   gui = per Browser nachlesen (Standard, braucht playwright) | aus = nicht lesen
+crc_source = gui
 
 [AI]
 # diese Daten werden vom Setupskript eingetragen

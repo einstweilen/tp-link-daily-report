@@ -19,6 +19,17 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+# lokales Modul (liegt neben diesem Skript): ARP-Erkennung ohne SNMP/Router-Login
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from arp_scan import get_local_arp_clients
+except ImportError:
+    # z.B. ältere Installation, bei der arp_scan.py noch fehlt: Skript bleibt lauffähig
+    def get_local_arp_clients(*_args, **_kwargs):
+        print("Hinweis: arp_scan.py nicht gefunden - lokale ARP-Clienterkennung deaktiviert"
+              " (Datei aus dem Repository nachladen).")
+        return []
+
 try:
     from tplinkrouterc6u.client.ex import TPLinkEXClientGCM
     from tplinkrouterc6u.common.exception import ClientException
@@ -51,6 +62,7 @@ TRANSLATIONS = {
         'fw_notice': 'Firmware Hinweis',
         'fw_installed': 'Aktuell installiert',
         'fw_available': 'Online verfügbar:',
+        'fw_order': 'Bitte in dieser Reihenfolge aktualisieren:',
         'rn': 'Release Notes',
         'at_a_glance': 'Auf einen Blick',
         'line_analysis': 'Leitungsanalyse',
@@ -108,6 +120,7 @@ TRANSLATIONS = {
         'fw_notice': 'Firmware Notice',
         'fw_installed': 'Currently installed',
         'fw_available': 'Available online:',
+        'fw_order': 'Please update in this order:',
         'rn': 'Release Notes',
         'at_a_glance': 'At a glance',
         'line_analysis': 'Line analysis',
@@ -168,6 +181,11 @@ class ConfigManager:
             'password': 'DEIN_ROUTER_PASSWORT'
         }
         self.config['Database'] = {'db_name': 'router_data.db'}
+        self.config['WebUI'] = {
+            'user': 'admin',
+            'warmup': 'auto',
+            'crc_source': 'gui'
+        }
         self.config['Email'] = {
             'smtp_server': 'smtp.example.com',
             'smtp_port': '587',
@@ -217,7 +235,11 @@ class ConfigManager:
 # ---------------------------------------------------------------------------
 class RouterAPI:
     def __init__(self, ip, username, password, debug=False):
-        self.host = ip
+        # Die Router-Firmware (Stand Sep 2026) erzwingt HTTPS: über http:// liefert der
+        # Router nur die GDPR-/Willkommensseite und der Login scheitert mit
+        # "Unknown error rsa_key!". Deshalb hier https:// als Standard
+        # (Zertifikat ist selbst signiert, login() verwendet verify_ssl=False).
+        self.host = ip if str(ip).startswith(('http://', 'https://')) else f"https://{ip}"
         self.username = username
         self.password = password
         self.debug = debug
@@ -254,96 +276,170 @@ class RouterAPI:
         print("Kritischer Fehler: API Login fehlgeschlagen mit allen Benutzerkombinationen.")
         return False
 
+    def _act(self, kind, oid, stack=None, attrs=None):
+        """Einen einzelnen OID abfragen (None, wenn keine Daten).
+
+        Wichtig: Bei Sammelabfragen entfernt die Library OIDs ohne Daten aus der
+        Ergebnisliste -> die Positionen der übrigen Werte verschieben sich.
+        """
+        try:
+            if stack:
+                item = self.router.ActItem(kind, oid, stack, attrs=attrs or [])
+            else:
+                item = self.router.ActItem(kind, oid, attrs=attrs or [])
+            _, values = self.router.req_act([item])
+            return values[0] if values else None
+        except Exception as e:
+            self._log(f"OID {oid} konnte nicht gelesen werden: {e}")
+            return None
+
+    def get_system_info(self):
+        """Nur die System-/Geräteinfos lesen (ein OID, schnell).
+
+        Wird verwendet, wenn die Client-Erfassung abgeschaltet ist
+        ([Modul] collect_clients = aus) - so bleibt der Report-Header aktuell.
+        """
+        if not self.router and not self.login():
+            return {}
+        dev_info = self._act(self.router.ActItem.GET, 'DEV2_DEV_INFO', attrs=[
+            'modelName', 'softwareVersion', 'hardwareVersion', 'serialNumber', 'upTime'
+        ])
+        return self._system_info(dev_info)
+
+    def _system_info(self, dev_info):
+        """DEV2_DEV_INFO-Dict -> system-Dict für die Datenbank."""
+        if not isinstance(dev_info, dict):
+            dev_info = {}
+        uptime = int(float(dev_info.get('upTime', 0) or 0))
+        return {
+            'model': dev_info.get('modelName', 'N/A'),
+            'firmware': dev_info.get('softwareVersion', 'N/A'),
+            'hardware': dev_info.get('hardwareVersion', 'N/A'),
+            'serial': dev_info.get('serialNumber', 'N/A'),
+            'uptime_seconds': uptime,
+            'uptime_days': round(uptime / 86400, 1) if uptime > 0 else 0.0
+        }
+
     def get_clients(self):
         if not self.router and not self.login():
             return {'error': 'Login failed'}
 
         try:
-            status = self.router.get_status()
-            acts = [
-                self.router.ActItem(self.router.ActItem.GET, 'DEV2_DEV_INFO', attrs=[
-                    'modelName', 'softwareVersion', 'hardwareVersion', 'serialNumber', 'upTime'
-                ]),
-                self.router.ActItem(self.router.ActItem.GL, 'DEV2_ADT_WIFI_CLIENT', attrs=[
-                    'MACAddress', 'signalStrength', 'packetsSent', 'packetsReceived', 'band'
-                ])
-            ]
-            _, values = self.router.req_act(acts)
-            
-            dev_info = values[0]
-            wlan_details = {c['MACAddress'].upper(): c for c in self.router._to_list(values[1])}
-            uptime = int(float(dev_info.get('upTime', 0)))
-            
+            # Die Firmware ab Build 260908 liefert über DEV2_HOST_ENTRY, DEV2_ADT_LAN und
+            # DEV2_ADT_WIFI_CLIENT keine Daten mehr ("data": null) - get_status()
+            # scheitert damit. Die Weboberfläche nutzt die APDEV-Associationslisten,
+            # die hier direkt abgefragt werden (jeweils einzeln, siehe _act()).
+            dev_info = self._act(self.router.ActItem.GET, 'DEV2_DEV_INFO', attrs=[
+                'modelName', 'softwareVersion', 'hardwareVersion', 'serialNumber', 'upTime'
+            ])
+            wlan_clients = self.router._to_list(self._act(self.router.ActItem.GL, 'DEV2_WIFI_APDEV_ASSOCDEV'))
+            lan_clients = self.router._to_list(self._act(self.router.ActItem.GL, 'DEV2_WIFI_APDEV_ETHASSOCDEV'))
+            dev_info = dev_info if isinstance(dev_info, dict) else {}
+            if not dev_info and not wlan_clients and not lan_clients:
+                self._log("Router lieferte keine Client-/Systemdaten (OIDs leer).")
+
             result = {
                 'timestamp': time.time(),
-                'system': {
-                    'model': dev_info.get('modelName', 'N/A'),
-                    'firmware': dev_info.get('softwareVersion', 'N/A'),
-                    'hardware': dev_info.get('hardwareVersion', 'N/A'),
-                    'serial': dev_info.get('serialNumber', 'N/A'),
-                    'uptime_seconds': uptime,
-                    'uptime_days': round(uptime / 86400, 1) if uptime > 0 else 0.0
-                },
+                'system': self._system_info(dev_info),
                 'wlan': [],
                 'lan': []
             }
-            
-            for device in status.devices:
-                mac = str(device._macaddr).replace("-", ":").upper()
-                is_wlan = False
-                if Connection and hasattr(device, 'type'):
-                    is_wlan = device.type in [Connection.HOST_2G, Connection.HOST_5G, Connection.GUEST_2G, Connection.GUEST_5G]
-                
-                cdata = {
-                    'mac': mac, 'hostname': device.hostname, 'ip': str(device._ipaddr), 'is_connected': 1
-                }
-                
-                if is_wlan:
-                    detail = wlan_details.get(mac, {})
-                    cdata.update({
-                        'signal_strength': int(float(detail.get('signalStrength', 0))),
-                        'bytes_total': int(float(detail.get('packetsReceived', 0))) * 1000, 
-                        'download_rate_mbps': 0, 'upload_rate_mbps': 0, 'link_speed_mbps':0
-                    })
-                    result['wlan'].append(cdata)
-                else:
-                    cdata.update({'bytes_total': 0, 'signal_strength': 0, 'download_rate_mbps': 0, 'upload_rate_mbps': 0, 'link_speed_mbps':0})
-                    result['lan'].append(cdata)
-                    
+
+            # Feldnamen wie in der Weboberfläche
+            for c in wlan_clients:
+                mac = str(c.get('MACAddress', '')).replace("-", ":").upper()
+                if not mac:
+                    continue
+                result['wlan'].append({
+                    'mac': mac,
+                    'hostname': c.get('X_TP_HostName', ''),
+                    'ip': c.get('X_TP_IPAddress', ''),
+                    'is_connected': 1 if str(c.get('active', '1')) == '1' else 0,
+                    'signal_strength': int(float(c.get('signalStrength', 0) or 0)),
+                    'download_rate_mbps': int(float(c.get('lastDataDownlinkRate', 0) or 0)) // 1000,
+                    'upload_rate_mbps': int(float(c.get('lastDataUplinkRate', 0) or 0)) // 1000,
+                    'link_speed_mbps': 0,
+                    'bytes_total': 0  # liefert die API nicht
+                })
+
+            for c in lan_clients:
+                mac = str(c.get('MACAddress', '')).replace("-", ":").upper()
+                if not mac:
+                    continue
+                # Nur LAN-Clients liefern echte Byte-Zähler (WLAN-Clients: bytes = 0,
+                # Firmware füllt sie nicht). 32-Bit-Zähler -> nur Momentaufnahme.
+                rx = int(float(c.get('bytesReceived', 0) or 0))
+                tx = int(float(c.get('bytesSent', 0) or 0))
+                result['lan'].append({
+                    'mac': mac,
+                    'hostname': c.get('X_TP_HostName', ''),
+                    'ip': c.get('IPAddress', ''),
+                    'is_connected': 1 if str(c.get('active', '1')) == '1' else 0,
+                    'signal_strength': 0,
+                    'download_rate_mbps': 0,
+                    'upload_rate_mbps': 0,
+                    'link_speed_mbps': int(float(c.get('linkSpeed', 0) or 0)),
+                    'bytes_received': rx,
+                    'bytes_sent': tx,
+                    'bytes_total': rx + tx
+                })
+
             return result
         except Exception as e:
             return {'error': str(e)}
 
+    def close(self):
+        """Sitzung beenden - der Router erlaubt nur eine Admin-Sitzung (wichtig vor
+        einem Wechsel zur Weboberfläche)."""
+        if self.router:
+            try:
+                self.router.logout()
+            except Exception:
+                pass
+            self.router = None
+
     def get_dsl_data(self):
         if not self.router and not self.login(): return {}
         try:
-            acts = [
-                self.router.ActItem(self.router.ActItem.GET, 'DEV2_DSL_LINE', '1,0,0,0,0,0', attrs=[
-                    'upstreamMaxBitRate', 'downstreamMaxBitRate', 
-                    'upstreamNoiseMargin', 'downstreamNoiseMargin',
-                    'upstreamAttenuation', 'downstreamAttenuation'
-                ]),
-                self.router.ActItem(self.router.ActItem.GET, 'DEV2_DSL_CHANNEL', '1,0,0,0,0,0', attrs=[
-                    'upstreamCurrRate', 'downstreamCurrRate'
-                ]),
-                self.router.ActItem(self.router.ActItem.GL, 'DEV2_ADT_WAN', attrs=[
-                    'connIPv4Address', 'connIPv6Address', 'connStatusV4', 'connStatusV6'
-                ])
-            ]
-            _, values = self.router.req_act(acts)
-            line, channel = values[0], values[1]
+            # Einzelabfragen (siehe _act()): Sammelabfragen verschieben bei leeren OIDs
+            # die Ergebnisliste und würden falsche Werte zuordnen.
+            line = self._act(self.router.ActItem.GET, 'DEV2_DSL_LINE', '1,0,0,0,0,0', attrs=[
+                'upstreamMaxBitRate', 'downstreamMaxBitRate',
+                'upstreamNoiseMargin', 'downstreamNoiseMargin',
+                'upstreamAttenuation', 'downstreamAttenuation'
+            ])
+            channel = self._act(self.router.ActItem.GET, 'DEV2_DSL_CHANNEL', '1,0,0,0,0,0', attrs=[
+                'upstreamCurrRate', 'downstreamCurrRate'
+            ])
+            wan_values = self._act(self.router.ActItem.GL, 'DEV2_ADT_WAN', attrs=[
+                'connIPv4Address', 'connIPv6Address', 'connStatusV4', 'connStatusV6'
+            ])
+            # Einzelne OIDs können leer zurückkommen (Router-/Firmwarezustand)
+            line = line if isinstance(line, dict) else {}
+            channel = channel if isinstance(channel, dict) else {}
+            if not line and not channel:
+                self._log("DSL-OIDs (DEV2_DSL_LINE/DEV2_DSL_CHANNEL) lieferten keine Daten.")
+                return {}
             
             wan = {}
-            for w in self.router._to_list(values[2]):
+            for w in self.router._to_list(wan_values):
                 if w.get('connStatusV4') == 'Connected' or w.get('connStatusV6') == 'Connected':
                     wan = w; break
-            if not wan and values[2]:
-                wan = values[2][0] if isinstance(values[2], list) else values[2]
+            if not wan and wan_values:
+                wan = wan_values[0] if isinstance(wan_values, list) else wan_values
             
             up_curr = int(float(channel.get('upstreamCurrRate', 0)))
             down_curr = int(float(channel.get('downstreamCurrRate', 0)))
             up_max = int(float(line.get('upstreamMaxBitRate', 0)))
             down_max = int(float(line.get('downstreamMaxBitRate', 0)))
+
+            # Die neue Router-Firmware liefert upstreamCurrRate/downstreamCurrRate = 0.
+            # Wie in vx-info.py auf die Maximalrate zurückfallen, damit keine 0 im
+            # Report/in der Datenbank landet.
+            if up_curr <= 0:
+                up_curr = up_max
+            if down_curr <= 0:
+                down_curr = down_max
             
             return {
                 "Aktuelle Upload-Rate (kbit/s)": up_curr,
@@ -408,12 +504,243 @@ class RouterAPI:
             return None
 
 # ---------------------------------------------------------------------------
+# WEBGUI (Headless-Browser: Router-Tabellen aufwecken + DSL-Fehlerzähler)
+# ---------------------------------------------------------------------------
+class RouterBrowser:
+    """Nur für Dinge, die die JSON-API nicht kann.
+
+    Die Firmware (Stand Okt 2026) füllt ihre DSL-/Client-Tabellen erst, wenn die
+    Weboberfläche sie angefragt hat - ohne das liefert die API dauerhaft leer.
+    Außerdem gibt es die DSL-Fehlerzähler (UCRC/DCRC) ausschließlich dort.
+    """
+
+    def __init__(self, ip, username, password, debug=False):
+        self.ip = ip
+        self.username = username
+        self.password = password
+        self.debug = debug
+        self.playwright = None
+        self.browser = None
+        self.page = None
+
+    def _log(self, msg):
+        if self.debug:
+            print(f"[WebUI] {msg}")
+
+    def login(self, timeout_ms=15000):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            print("Hinweis: 'playwright' fehlt - Weboberfläche nicht verfügbar."
+                  " Installation: pip install -r requirements.txt && playwright install chromium")
+            return False
+        try:
+            self.playwright = sync_playwright().start()
+            # Sparsame Einstellungen (Chromium ist auf einem Pi der teuerste Teil)
+            self.browser = self.playwright.chromium.launch(headless=True, args=[
+                '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+                '--disable-gpu', '--disable-software-rasterizer', '--disable-extensions',
+                '--disable-background-networking', '--disable-sync', '--disable-default-apps',
+                '--disable-translate', '--no-first-run', '--mute-audio',
+                '--js-flags=--max-old-space-size=256'])
+            context = self.browser.new_context(ignore_https_errors=True,
+                                               viewport={'width': 1280, 'height': 800})
+            # Bilder/Medien/Schriften blocken - spart CPU und RAM (JS/CSS bleiben nötig)
+            try:
+                context.route('**/*', lambda route: route.abort()
+                              if route.request.resource_type in ('image', 'media', 'font')
+                              else route.continue_())
+            except Exception:
+                pass
+            self.page = context.new_page()
+            self.page.set_default_timeout(30000)
+
+            response = self.page.goto(f"https://{self.ip}", wait_until='load')
+            status = response.status if response else None
+            # Mehrere Versuche: auf langsamen Geräten ist das Login-JS noch nicht bereit
+            for attempt in (1, 2, 3):
+                try:
+                    form = self.page.wait_for_selector('#pc-login-user', state='attached', timeout=timeout_ms)
+                except Exception:
+                    if self._logged_in(timeout_ms=3000):
+                        self._log("Bereits angemeldet.")
+                        return True
+                    print(f"Warnung: Loginformular nicht gefunden (HTTP {status})."
+                          " Läuft noch eine andere Admin-Sitzung?")
+                    return False
+                try:
+                    self._log(f"Login-Versuch {attempt}...")
+                    self.page.evaluate(f"document.getElementById('pc-login-user').value = '{self.username}';")
+                    self.page.evaluate(f"document.getElementById('pc-login-password').value = '{self.password}';")
+                    time.sleep(1.0)
+                    self.page.evaluate("const b = document.getElementById('pc-login-btn'); if (b) b.click();")
+                    time.sleep(2)
+                    if self.page.evaluate("() => !!(document.body && document.body.innerText"
+                                          " && document.body.innerText.toLowerCase().includes('gleichzeitig anmelden'))"):
+                        self.page.evaluate("document.querySelector('.btn-msg-ok')?.click();")
+                        time.sleep(1)
+                    if self._logged_in(timeout_ms=8000):
+                        return True
+                except Exception as e:
+                    # z. B. "Execution context was destroyed" während einer Navigation
+                    self._log(f"Versuch {attempt} abgebrochen: {e}")
+                try:
+                    self.page.reload(wait_until='load')
+                    time.sleep(1.5)
+                except Exception:
+                    pass
+            print("Warnung: Login in der Weboberfläche fehlgeschlagen.")
+            return False
+        except Exception as e:
+            print(f"Warnung: Weboberfläche nicht nutzbar: {e}")
+            return False
+
+    def _logged_in(self, timeout_ms=15000):
+        """Eingeloggten Zustand erkennen - Elementnamen sind je Firmware unterschiedlich,
+        deshalb zusätzlich der Text-Fallback ('Ausloggen'/'Log out')."""
+        deadline = time.time() + timeout_ms / 1000
+        while time.time() < deadline:
+            try:
+                if self.page.query_selector('#topLogout, ul#ul-nav, #logOut, .logout, a[href*="logout"]'):
+                    return True
+                text = (self.page.evaluate("() => document.body ? document.body.innerText : ''") or '').lower()
+                if 'ausloggen' in text or 'log out' in text or 'logout' in text:
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.5)
+        return False
+
+    def _page_text(self, limit=200):
+        """Sichtbarer Text der Seite (mit Schutz gegen noch nicht geladenes DOM)."""
+        try:
+            text = self.page.evaluate("() => document.body ? document.body.innerText : ''") or ''
+        except Exception:
+            return ''
+        return " ".join(text.split())[:limit]
+
+    def _read_ids(self, ids):
+        try:
+            return self.page.evaluate("""(ids) => {
+                const out = {};
+                for (const [k, id] of Object.entries(ids)) {
+                    const el = document.getElementById(id);
+                    out[k] = el ? (el.textContent || '').trim() : '';
+                }
+                return out;
+            }""", ids)
+        except Exception:
+            return {}
+
+    def _open_dsl_page(self, timeout=5000):
+        try:
+            self.page.locator("ul#ul-nav li").filter(has_text="Erweiterte Einstellungen").first.click(timeout=timeout)
+            time.sleep(1.5)
+            return True
+        except Exception:
+            return False
+
+    def _open_netzplan(self, timeout_ms=15000):
+        """Netzplan-Seite öffnen und warten, bis der Router die Mesh-Daten geliefert hat."""
+        try:
+            self.page.evaluate("""() => {
+                const n = Array.from(document.querySelectorAll('li, a, span.text')).find(
+                    el => el && el.innerText && el.innerText.trim().toLowerCase() === 'netzplan');
+                if (n) n.click();
+            }""")
+        except Exception:
+            return False
+        start = time.time()
+        while (time.time() - start) * 1000 < timeout_ms:
+            try:
+                ready = self.page.evaluate("""() => {
+                    const d = window.easyMeshApDeviceList, w = window.easyMeshApWifiStaList,
+                          l = window.easyMeshApEthernetStaList;
+                    return (Array.isArray(d) && d.length > 0) || (Array.isArray(w) && w.length > 0)
+                        || (Array.isArray(l) && l.length > 0);
+                }""")
+            except Exception:
+                ready = False
+            if ready:
+                self._log("Mesh-Daten geladen.")
+                return True
+            time.sleep(0.5)
+        self._log("Mesh-Daten nicht innerhalb des Zeitlimits geladen.")
+        return False
+
+    def wake_up(self, include_clients=True):
+        """Router zum Sammeln bewegen.
+
+        include_clients=False: nur die DSL-Seite anfragen (schnell); das Öffnen des
+        Netzplans inkl. Warten auf die Mesh-Daten entfällt (nur für Clientdaten nötig).
+        """
+        self._log(f"Wecke Router-Tabellen (DSL{', Netzplan' if include_clients else ''})...")
+        if not all(self._read_ids({"a": "downstreamCurrRate", "b": "downstreamNoiseMargin"}).values()):
+            self._open_dsl_page()
+        if include_clients:
+            self._open_netzplan()
+        time.sleep(1)
+        return True
+
+    def get_dsl_error_counters(self):
+        """DSL-Fehlerzähler (UCRC/DCRC) - gibt es nur in der Weboberfläche."""
+        ids = {"ucrc": "UCRC", "dcrc": "DCRC"}
+        values = self._read_ids(ids)
+        if not all(values.values()):
+            # Werte erscheinen erst kurz nach dem Wechsel auf die DSL-Seite
+            self._open_dsl_page()
+            deadline = time.time() + 12
+            while time.time() < deadline:
+                values = self._read_ids(ids)
+                if all(values.values()):
+                    break
+                time.sleep(1.0)
+        if not all(values.values()):
+            self._log("Fehlerzähler (UCRC/DCRC) nicht gefunden.")
+            return None
+        return values
+
+    def close(self):
+        try:
+            if self.page:
+                try:
+                    self.page.locator('#topLogout').click(timeout=8000)
+                    self.page.locator('.btn-msg-ok').click(timeout=5000)
+                    time.sleep(1)
+                except Exception:
+                    pass
+        finally:
+            try:
+                if self.browser: self.browser.close()
+            except Exception:
+                pass
+            try:
+                if self.playwright: self.playwright.stop()
+            except Exception:
+                pass
+            self.page = self.browser = self.playwright = None
+
+# ---------------------------------------------------------------------------
 # DATABASE MANAGER
 # ---------------------------------------------------------------------------
 class DatabaseManager:
     def __init__(self, db_path="router_data.db"):
         self.db_path = db_path
         self._create_tables()
+
+    def get_hostname_by_mac(self, mac):
+        """Zuletzt bekannten Hostnamen zu einer MAC liefern (für den ARP-Scan)."""
+        if not mac:
+            return None
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute(
+                    "SELECT hostname FROM clients WHERE mac = ? AND hostname IS NOT NULL"
+                    " AND hostname NOT IN ('', 'Unknown', 'unknown')"
+                    " ORDER BY time_ut DESC LIMIT 1", (mac,)).fetchone()
+            return row[0] if row else None
+        except Exception:
+            return None
 
     def _create_tables(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -478,12 +805,13 @@ class DatabaseManager:
         if not data: return
         self._run_query('''INSERT INTO dsl (time_ut, upstream_curr_rate, downstream_curr_rate, upstream_max_rate,
                            downstream_max_rate, upstream_noise_margin, downstream_noise_margin, upstream_attenuation,
-                           downstream_attenuation, ip4_curr, ip6_curr)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                           downstream_attenuation, ucrc, dcrc, ip4_curr, ip6_curr)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                         (int(timestamp), data.get('Aktuelle Upload-Rate (kbit/s)', 0), data.get('Aktuelle Download-Rate (kbit/s)', 0),
                          data.get('Maximale Upload-Rate (kbit/s)', 0), data.get('Maximale Download-Rate (kbit/s)', 0),
                          data.get('Signal-Rausch-Abstand Upload (dB)', 0.0), data.get('Signal-Rausch-Abstand Download (dB)', 0.0),
                          data.get('Leitungsdämpfung Upload (dB)', 0.0), data.get('Leitungsdämpfung Download (dB)', 0.0),
+                         int(float(data.get('ucrc', 0) or 0)), int(float(data.get('dcrc', 0) or 0)),
                          data.get('ip4_curr', ''), data.get('ip6_curr', '')))
 
     def insert_clients(self, clients_data):
@@ -495,10 +823,11 @@ class DatabaseManager:
         for ctype, clist in [('wlan', clients_data.get('wlan', [])), ('lan', clients_data.get('lan', []))]:
             for c in clist:
                 batch.append((c['mac'], int(ts), ctype, c.get('hostname', ''), c.get('ip', ''),
-                              c.get('signal_strength', 0), 1, c.get('bytes_total', 0)))
+                              c.get('signal_strength', 0), 1, c.get('bytes_total', 0),
+                              int(c.get('bytes_received', 0)), int(c.get('bytes_sent', 0))))
                 
         with sqlite3.connect(self.db_path) as conn:
-            conn.executemany("INSERT OR REPLACE INTO clients (mac, time_ut, type, hostname, ip, signal_strength, is_connected, bytes_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", batch)
+            conn.executemany("INSERT OR REPLACE INTO clients (mac, time_ut, type, hostname, ip, signal_strength, is_connected, bytes_total, bytes_received, bytes_sent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", batch)
 
     def insert_events_from_log(self, logcontent_or_path):
         """Importiert Router-Log-Zeilen mit Boot-Timestamp-Korrektur (nur natives Format)."""
@@ -670,6 +999,94 @@ class Reporter:
         _, rows = self.db._run_query("SELECT model FROM system ORDER BY time_ut DESC LIMIT 1")
         return rows[0][0] if rows else "Router"
 
+    def _get_firmware_entries(self):
+        """Alle Firmware-Einträge der TP-Link-Downloadseite (neueste zuerst).
+
+        TP-Link listet dort jede Version als eigene Tabelle - bisher wurde nur die
+        erste (= neueste) ausgewertet. Rückgabe: Liste von dicts mit
+        title, version (Tupel), version_str, date_ut, notes_html, link.
+        """
+        import urllib.request
+        url = "https://www.tp-link.com/de/support/download/vx231v/#Firmware"
+        entries = []
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                content = response.read().decode('utf-8', errors='ignore')
+
+            for table_content in re.findall(
+                    r'<table[^>]*class="download-resource-table"[^>]*>(.*?)</table>', content, re.S | re.I):
+                title_match = re.search(r'<th[^>]*class="download-resource-name"[^>]*>.*?<p>(.*?)</p>',
+                                        table_content, re.S | re.I)
+                title = title_match.group(1).strip() if title_match else "Unbekannt"
+
+                link_match = re.search(r'href="([^"]+\.zip)"', table_content, re.I)
+                link = link_match.group(1).strip() if link_match else None
+
+                date_ut = 0
+                date_match = re.search(r'Datum der Veröffentlichung:.*?</span>\s*<span>(.*?)</span>',
+                                       table_content, re.S | re.I)
+                if date_match:
+                    try:
+                        date_ut = int(datetime.strptime(date_match.group(1).strip(), '%Y-%m-%d').timestamp())
+                    except Exception:
+                        pass
+
+                notes_html = ""
+                more_row = re.search(r'<tr[^>]*class="more-info"[^>]*>(.*?)</tr>', table_content, re.S | re.I)
+                if more_row:
+                    td_match = re.search(r'<td[^>]*class="more"[^>]*>(.*?)</td>', more_row.group(1), re.S | re.I)
+                    if td_match:
+                        notes_html = td_match.group(1).strip()
+
+                # Version aus Titel (bevorzugt) oder Dateiname: ..._V1_0.26.0 Build ...
+                version_str = ""
+                for source in (title, link.split('/')[-1] if link else ""):
+                    m = re.search(r'_V?\d+_((\d+\.)+\d+)', source) or re.search(r'_V?(\d+\.\d[\d\.]*)_', source)
+                    if m:
+                        version_str = m.group(1)
+                        break
+
+                entries.append({'title': title, 'version_str': version_str,
+                                'version': self._extract_version_tuple(version_str),
+                                'date_ut': date_ut, 'notes_html': notes_html, 'link': link})
+        except Exception as e:
+            self._log(f"Firmware-Scraping fehlgeschlagen: {e}")
+        return entries
+
+    def _extract_version_tuple(self, fw_str, fallback_str=None):
+        """Versionsnummer in ein vergleichbares Tupel wandeln.
+
+        Online:  '0.26.0'   (aus ..._V1_0.26.0 Build ...)
+        Lokal:   '231.0.26' (Router-softwareVersion) -> (0, 26)
+        """
+        if not fw_str:
+            return (0,)
+
+        def to_tuple(text):
+            m = re.search(r'(\d+(?:\.\d+)+)', text)
+            if not m:
+                return None
+            parts = [int(p) for p in m.group(1).split('.')]
+            while len(parts) > 2 and parts[-1] == 0:
+                parts.pop()
+            return tuple(parts) if parts else None
+
+        # Lokale Schreibweise 231.x.y -> führende Geräteversion entfernen
+        if fw_str.startswith('231.'):
+            m = re.match(r'^231\.((\d+\.)*\d+)', fw_str)
+            if m:
+                return to_tuple(m.group(1)) or (0,)
+
+        result = to_tuple(fw_str)
+        if result:
+            return result
+        if fallback_str:
+            m = re.search(r'_V?[\d\.]+_((\d+\.)+\d+)', fallback_str)
+            if m:
+                return to_tuple(m.group(1)) or (0,)
+        return (0,)
+
     def _get_latest_firmware_info(self):
         import urllib.request
         url = "https://www.tp-link.com/de/support/download/vx231v/#Firmware"
@@ -702,65 +1119,44 @@ class Reporter:
             return None, None, None, None
 
     def _check_firmware_update(self):
-        rn_title, rn_date, rn_txt, dl_link = self._get_latest_firmware_info()
+        """Neuere Firmware-Versionen zur installierten ermitteln.
+
+        TP-Link veröffentlicht teils mehrere Versionen gleichzeitig (z. B. 0.25.0 und
+        0.26.0 - letztere verlangt laut Release Notes zuerst 0.25.0). Deshalb werden
+        ALLE Einträge der Downloadseite ausgewertet, deren Version neuer ist.
+
+        Rückgabe: (anzeigen?, vorherige_version, installierte_version, eintraege)
+        eintraege: Liste der neueren Versionen (neueste zuerst); im 48-h-Fall
+        (Version ist aktuell, gerade aktualisiert) die Notizen zur installierten Version.
+        """
+        entries = self._get_firmware_entries()
         _, rows = self.db._run_query("SELECT firmware, time_ut FROM system ORDER BY id DESC LIMIT 2")
-        if not rows or len(rows) < 1: 
-            return False, None, None, None, None, None
-            
-        act_fw, act_ts = rows[0][0], int(rows[0][1])
+        if not rows or len(rows) < 1:
+            return False, None, None, []
+
+        act_fw = rows[0][0]
         old_fw = rows[1][0] if len(rows) > 1 else None
         old_ts = int(rows[1][1]) if len(rows) > 1 else 0
-        
-        def extract_version_tuple(fw_str, fallback_str=None):
-            if not fw_str: return (0,)
-            import re
-            
-            # Check online standard structure: e.g. VX231v(DE)v1_0.23.0_...
-            # The version is between the first and second underscore.
-            m = re.search(r'^[^_]+_([^_]+)_', fw_str)
-            if m:
-                ver_str = m.group(1)
-                parts = [int(p) for p in ver_str.split('.') if p.isdigit()]
-                while len(parts) > 2 and parts[-1] == 0:
-                    parts.pop()
-                if parts:
-                    return tuple(parts)
-            
-            # Check local standard structure: e.g. 231.0.23 / 231.0.19
-            if fw_str.startswith('231.') or fw_str.startswith('0.'):
-                m = re.search(r'^\d+\.((\d+\.)*\d+)', fw_str)
-                if m:
-                    parts = [int(p) for p in m.group(1).split('.') if p.isdigit()]
-                    while len(parts) > 2 and parts[-1] == 0:
-                        parts.pop()
-                    if parts:
-                        return tuple(parts)
-                        
-            # Use fallback (rn_title) if parsing the link failed but it's an online check
-            if fallback_str:
-                m = re.search(r'_V?[\d\.]+_((\d+\.)+\d+)', fallback_str)
-                if m:
-                    parts = [int(p) for p in m.group(1).split('.') if p.isdigit()]
-                    while len(parts) > 2 and parts[-1] == 0:
-                        parts.pop()
-                    if parts:
-                        return tuple(parts)
-                
-            return (0,)
+        act_v = self._extract_version_tuple(act_fw)
 
-        act_v = extract_version_tuple(act_fw)
-        filename = dl_link.split('/')[-1] if dl_link else ""
-        web_v = extract_version_tuple(filename, fallback_str=rn_title)
-        
-        if act_v < web_v and web_v != (0,):
-            return True, old_fw, act_fw, rn_title, rn_date, rn_txt
-            
-        if act_v == web_v and web_v != (0,):
+        if act_v != (0,):
+            newer = [e for e in entries if e['version'] != (0,) and act_v < e['version']]
+            if newer:
+                return True, old_fw, act_fw, newer
+
+            # Installierte Version ist aktuell -> 48 h lang die Release Notes zeigen
             cutoff = (datetime.now() - timedelta(hours=48)).timestamp()
             if old_fw and old_fw != act_fw and old_ts > cutoff:
-                return True, old_fw, act_fw, rn_title, rn_date, rn_txt
-                
-        return False, old_fw, act_fw, rn_title, rn_date, rn_txt
+                # Wie beim Sprung 0.24 -> 0.26: alle Versionen zeigen, die seit dem
+                # vorherigen Stand dazugekommen sind (Zwischenschritte inklusive).
+                old_v = self._extract_version_tuple(old_fw)
+                if old_v != (0,) and old_v < act_v:
+                    match = [e for e in entries if e['version'] != (0,) and old_v < e['version']]
+                else:
+                    match = [e for e in entries if e['version'] == act_v]
+                return True, old_fw, act_fw, match or entries[:1]
+
+        return False, old_fw, act_fw, []
 
     def _build_client_sessions(self, hours=24):
         start_ts = int((datetime.now() - timedelta(hours=hours)).timestamp())
@@ -1889,7 +2285,7 @@ class Reporter:
         conn_since, ip4, ip6, down, up = self._get_connection_status()
         uptime_data = self._get_router_uptime()
         latest_ips = self._get_ip_changes(10)
-        fw_upd, fw_old, fw_act, rn_t, rn_d, rn_txt = self._check_firmware_update()
+        fw_upd, fw_old, fw_act, fw_entries = self._check_firmware_update()
         ai_text = ""
         if self.config.getboolean('Modul', 'ai_analysis', fallback=True):
             ai_text = self._run_ai_analysis(evt_hours)
@@ -1955,13 +2351,35 @@ class Reporter:
                 
             html += "</td></tr>"
             
-        if fw_upd:
-            rn_ds = datetime.fromtimestamp(rn_d).strftime('%d.%m.%Y') if rn_d else self.t['unknown']
+        if fw_upd and fw_entries:
+            def _ver_label(entry):
+                return entry.get('version_str') or '.'.join(str(p) for p in entry.get('version', ())) or entry.get('title', '')
+
+            # "Verfügbar"-Zeile nur, wenn tatsächlich neuere Versionen vorliegen
+            act_v = self._extract_version_tuple(fw_act)
+            has_newer = any(e['version'] != (0,) and e['version'] > act_v for e in fw_entries)
+            available_line = ""
+            if has_newer:
+                available_line = (f"{self.t['fw_available']} <strong>"
+                                  + ", ".join(_ver_label(e) for e in fw_entries) + "</strong><br>")
+
+            # Reihenfolge (älteste neuere zuerst) - wichtig, wenn ein Zwischenschritt nötig ist
+            order_line = ""
+            if has_newer and len(fw_entries) > 1:
+                ascending = sorted(fw_entries, key=lambda e: e['version'])
+                order_line = (f"<div style='margin-top: 10px;'><strong>{self.t['fw_order']}</strong> "
+                              + " &#10142; ".join(_ver_label(e) for e in ascending) + "</div>")
+
+            notes_blocks = ""
+            for e in fw_entries:
+                ds = datetime.fromtimestamp(e['date_ut']).strftime('%d.%m.%Y') if e.get('date_ut') else self.t['unknown']
+                notes_blocks += (f"<div style=\"border-top: 1px solid #ffcc80; margin-top: 10px; padding-top: 10px;\">"
+                                 f"<strong>{self.t['rn']} {_ver_label(e)} ({ds}):</strong><br>{e.get('notes_html') or ''}</div>")
+
             html += f"""<tr><td style="padding: 20px;"><div style="border: 2px solid #ff9800; background-color: #fff3e0; padding: 15px; border-radius: 5px;">
                 <h3 style="margin-top: 0; color: #e65100;">{self.t['fw_notice']}</h3><div style="font-size: 14px; color: #333;">
                 {self.t['fw_installed']} <span style="color: #2e7d32; font-weight: bold;">{fw_act}</span><br>
-                {self.t['fw_available']} <strong>{rn_t}</strong><br>
-                <div style="border-top: 1px solid #ffcc80; margin-top: 10px; padding-top: 10px;"><strong>{self.t['rn']} ({rn_ds}):</strong><br>{rn_txt}</div></div></div></td></tr>"""
+                {available_line}{order_line}{notes_blocks}</div></div></td></tr>"""
         
         # 1. AI Analyse
         if self.config.getboolean('Modul', 'ai_analysis', fallback=True):
@@ -2136,9 +2554,62 @@ class Reporter:
                     print(f"Es wurden {deleted_count} alte Report(s) gelöscht (älter als {cleanup_days} Tage).")
 
 # ---------------------------------------------------------------------------
+# CLIENT-QUELLEN ZUSAMMENFÜHREN
+# ---------------------------------------------------------------------------
+def merge_client_sources(gui_clients, arp_clients):
+    """Führt die ARP-Liste (stabile Basis) mit den API-Daten zusammen.
+
+    Die WLAN-/Mesh-Tabellen des Routers sind gelegentlich komplett leer; die
+    lokale ARP-Erkennung (Ping-Sweep + ARP-Tabelle, ohne SNMP) liefert dann
+    weiterhin die Geräte im Netz. API-Werte (Signal, Raten, Bytes, Status)
+    überschreiben die ARP-Platzhalter, sofern vorhanden.
+    """
+    result = dict(gui_clients or {})
+
+    api_by_mac = {}
+    for ctype in ('wlan', 'lan'):
+        for c in (gui_clients or {}).get(ctype, []) or []:
+            mac = c.get('mac')
+            if mac:
+                api_by_mac[mac] = (ctype, c)
+
+    merged_wlan, merged_lan = [], []
+    enriched = added = 0
+
+    for arp in arp_clients or []:
+        hit = api_by_mac.pop(arp.get('mac'), None)
+        if hit is None:
+            merged_wlan.append(arp)          # nur im ARP vorhanden
+            added += 1
+            continue
+        ctype, api_client = hit
+        merged = dict(arp)
+        for key, value in api_client.items():
+            if value not in (None, ''):
+                merged[key] = value          # API-Werte haben Vorrang
+        enriched += 1
+        (merged_wlan if ctype == 'wlan' else merged_lan).append(merged)
+
+    for ctype, c in api_by_mac.values():
+        (merged_wlan if ctype == 'wlan' else merged_lan).append(c)
+
+    result['wlan'] = merged_wlan
+    result['lan'] = merged_lan
+    print(f"Clients: ARP {len(arp_clients or [])} | angereichert {enriched} |"
+          f" nur im ARP {added} -> wlan {len(merged_wlan)}, lan {len(merged_lan)}")
+    return result
+
+
+# ---------------------------------------------------------------------------
 # MAIN CLI
 # ---------------------------------------------------------------------------
 def main():
+    # Niedrigere Priorität: der Lauf soll den Pi nicht ausbremsen
+    try:
+        os.nice(10)
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(description="TP-Link Report Script")
     parser.add_argument('--update', action='store_true', help='Holt Daten via API und speichert sie')
     parser.add_argument('--report-send', '--send', action='store_true', help='Generiert und versendet Report')
@@ -2164,14 +2635,78 @@ def main():
         api = RouterAPI(router_ip, "user", router_pw, debug=args.debug)
         if api.login():
             print("API Login OK. Hole Daten...")
-            c_data = api.get_clients()
-            if 'error' not in c_data:
-                db.insert_system(c_data.get('system', {}), time.time())
-                db.insert_clients(c_data)
-                
+            # [Modul] collect_clients = aus  ->  keine Client-Abfrage (spart Aufwecken,
+            # Netzplan-Wartezeit und den lokalen ARP-Scan; Clients kommen dann aus dem
+            # stündlichen vx231v-Lauf in derselben Datenbank).
+            collect_clients = config_mgr.config.getboolean('Modul', 'collect_clients', fallback=True)
+            c_data = api.get_clients() if collect_clients else {'wlan': [], 'lan': []}
             dsl_data = api.get_dsl_data()
-            if dsl_data: db.insert_dsl(dsl_data, time.time())
+
+            # Die neue Firmware füllt ihre Tabellen erst nach einem Besuch der
+            # Weboberfläche -> bei leeren DSL-Daten einmal aufwecken und neu lesen.
+            # Danach (Sitzung ist dann beendet) gleich die Fehlerzähler mitnehmen.
+            warmup = config_mgr.config.get('WebUI', 'warmup', fallback='auto').strip().lower()
+            crc_source = config_mgr.config.get('WebUI', 'crc_source', fallback='gui').strip().lower()
+            need_crc = crc_source not in ('aus', 'off', 'nein', 'no')
+            clients_empty = collect_clients and not (c_data.get('wlan') or c_data.get('lan'))
+            need_wake = (not dsl_data or clients_empty) and warmup not in ('aus', 'off', 'nein', 'no')
+
+            if need_wake or need_crc:
+                if need_wake:
+                    print("Hinweis: Router-Tabellen leer (DSL/Clients) -> wecke sie per Weboberfläche...")
+                api.close()   # Router erlaubt nur eine Admin-Sitzung
+                browser = RouterBrowser(router_ip,
+                                        config_mgr.config.get('WebUI', 'user', fallback='admin'),
+                                        router_pw, debug=args.debug)
+                if browser.login():
+                    if need_wake:
+                        browser.wake_up(include_clients=collect_clients)
+                    counters = browser.get_dsl_error_counters() if need_crc else None
+                    browser.close()
+                    if need_wake:
+                        # Der Router gibt die Sitzung nach dem Browser-Logout erst kurz
+                        # danach frei -> Neuanmeldung mehrfach versuchen.
+                        for attempt in (1, 2, 3):
+                            if api.login():
+                                c_data = api.get_clients() if collect_clients else {'wlan': [], 'lan': []}
+                                dsl_data = api.get_dsl_data()
+                                break
+                            print(f"  (Neuanmeldung {attempt}/3 fehlgeschlagen)")
+                            time.sleep(3)
+                        print(f"Nach dem Aufwecken: {len(c_data.get('wlan', [])) + len(c_data.get('lan', []))} Clients,",
+                              "DSL-Daten vorhanden" if dsl_data else "weiterhin keine DSL-Daten")
+                    if counters and dsl_data:
+                        dsl_data.update(counters)
+
+            if not collect_clients:
+                sys_info = api.get_system_info()
+                if sys_info:
+                    db.insert_system(sys_info, time.time())
+                    print(f"Systemdaten gespeichert: {sys_info.get('model')} / Firmware {sys_info.get('firmware')}")
+                print("Client-Erfassung ist abgeschaltet ([Modul] collect_clients = aus).")
+            elif 'error' not in c_data:
+                # ARP-Erkennung im eigenen Netz (ohne SNMP) als stabile Basis,
+                # damit Clients auch bei leerer Router-Tabelle erfasst werden
+                c_data = merge_client_sources(c_data, get_local_arp_clients(db_manager=db))
+                if len(c_data.get('wlan', [])) + len(c_data.get('lan', [])) == 0:
+                    # Weder Router noch ARP lieferten Clients - insert_clients() würde
+                    # sonst zuerst alle Clients auf is_connected=0 setzen.
+                    print("Warnung: Weder Router noch ARP lieferten Clients."
+                          " Speichere keine Clientdaten, um die Anwesenheitsdaten nicht"
+                          " zu verfälschen.")
+                else:
+                    db.insert_system(c_data.get('system', {}), time.time())
+                    db.insert_clients(c_data)
+            else:
+                print(f"Warnung: Client-Abfrage fehlgeschlagen: {c_data['error']}")
                 
+            if dsl_data:
+                db.insert_dsl(dsl_data, time.time())
+                print(f"DSL gespeichert: down {dsl_data.get('Aktuelle Download-Rate (kbit/s)')} kbit/s,"
+                      f" SNR {dsl_data.get('Signal-Rausch-Abstand Download (dB)')} dB")
+            else:
+                print("Hinweis: keine DSL-Daten erhalten - kein DSL-Eintrag gespeichert.")
+
             log_txt = api.downloadrouterlog_to_memory()
             if log_txt:
                 added = db.insert_events_from_log(log_txt)

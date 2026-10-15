@@ -11,6 +11,8 @@ Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.
 
 **Funktionen:**
 * Datenabruf von DSL-Werten und der verbundenen Clients via [Router API von Alexandr Erohin ](https://github.com/AlexandrErohin/TP-Link-Archer-C6U)
+* Client-Erkennung alternativ per lokalem ARP-Scan (ohne SNMP/Router-Login) - praktisch, wenn die Router-Tabellen gerade leer sind
+* Die Weboberfläche wird nur dann automatisch geöffnet (Headless-Browser), wenn die Firmware Daten erst nach einem Besuch der Oberfläche liefert oder die DSL-Fehlerzähler (CRC) gelesen werden müssen
 * Speicherung der Daten in einer Datenbank
 * Automatisierte Generierung und Versand von täglichen Statusreports
 <details>

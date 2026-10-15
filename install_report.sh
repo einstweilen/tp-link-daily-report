@@ -48,7 +48,7 @@ main() {
 
             if [ -z "$FILES" ]; then
                 error "Dateiliste konnte nicht geladen werden (GitHub API Limit?)."
-                FILES="tp-report.py requirements.txt config-report.ini.sample setup_ai_key.sh tp-report-setup-guide.md"
+                FILES="tp-report.py arp_scan.py requirements.txt config-report.ini.sample setup_ai_key.sh tp-report-setup-guide.md"
                 info "Nutze Fallback-Dateiliste."
             fi
             
@@ -65,6 +65,16 @@ main() {
     if ! command -v python3 &> /dev/null; then
         error "Python 3 ist nicht installiert. Bitte zuerst installieren."
         exit 1
+    fi
+
+    # Client-Erkennung ohne SNMP (arp_scan.py) braucht ping + arp/ip - nicht kritisch,
+    # ohne diese Werkzeuge werden Clients nur noch über die Router-API erkannt.
+    if ! command -v ping &> /dev/null; then
+        info "Hinweis: 'ping' nicht gefunden - lokale ARP-Clienterkennung (arp_scan.py) findet keine Geräte."
+    fi
+    if ! command -v arp &> /dev/null && ! command -v ip &> /dev/null; then
+        info "Hinweis: weder 'arp' (net-tools) noch 'ip' (iproute2) gefunden -"
+        info "         lokale ARP-Clienterkennung nicht möglich (sudo apt install iproute2)."
     fi
 
     step "[1/7] Erstelle virtuelle Umgebung..."
@@ -126,6 +136,17 @@ main() {
             exit 1
         fi
         success "Abhängigkeiten installiert."
+
+        # Chromium für das Aufwecken der Router-Tabellen / die DSL-Fehlerzähler
+        if pip show playwright > /dev/null 2>&1; then
+            info "Installiere Chromium für Playwright (einmalig, einige Minuten)..."
+            if playwright install chromium >> .install_report.log 2>&1; then
+                success "Chromium installiert."
+            else
+                info "Chromium-Installation fehlgeschlagen - Details: .install_report.log"
+                info "Manuell nachholen:  playwright install chromium"
+            fi
+        fi
     else
         error "requirements.txt nicht gefunden!"
         exit 1

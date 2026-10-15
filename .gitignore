@@ -32,9 +32,11 @@ config-report.ini
 
 # Reasonix (KI-Assistenz-Cache)
 .reasonix/
+reasonix.toml
 
 # Temporäre Dateien des Projekts
 test.json
+ai_prompt_debug.txt
 last_import.txt
 .test_api_daily.py
 *.log

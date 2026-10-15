@@ -47,7 +47,10 @@ snr_heatmap      = True   # Tagesschwankungen-Heatmap
 client_presence  = True   # Anwesenheits-Ganttchart
 presence         = True   # Aktuell aktive Clients
 event_log        = True   # Ereignislog
+collect_clients  = True   # Client-Erfassung beim --update/Report (False = schneller Lauf)
 ```
+
+> `collect_clients = False` überspringt die Client-Abfrage samt Aufwecken des Netzplans und dem lokalen ARP-Scan. Sinnvoll, wenn ein anderer Lauf (z. B. `vx-info.py`) dieselbe Datenbank mit Clientdaten füllt - der Report-Header (Firmware/Uptime) wird weiterhin aktualisiert.
 
 ---
 
@@ -67,13 +70,17 @@ Der Header wird bei jeder Reporterstellung aus den aktuellen Datenbank-Werten be
 
 ![Firmware Hinweis](images/sr-02-firmware.png)
 
-Dieser Abschnitt erscheint **nur**, wenn eine neuere Firmware als die aktuell installierte auf der TP-Link-Supportseite verfügbar ist. Das Skript ruft dazu die TP-Link-Downloadseite für den Router (aktuell: VX231v ab und vergleicht die dort hinterlegte Versionsnummer mit der in der Datenbank gespeicherten Firmware-Version.
+Dieser Abschnitt erscheint **nur**, wenn eine neuere Firmware als die aktuell installierte auf der TP-Link-Supportseite verfügbar ist - oder wenn innerhalb der letzten **48 Stunden** aktualisiert wurde. Das Skript ruft dazu die TP-Link-Downloadseite für den Router (aktuell: VX231v) ab und vergleicht die dort hinterlegten Versionsnummern mit der in der Datenbank gespeicherten Firmware-Version.
+
+TP-Link veröffentlicht mitunter **mehrere Versionen gleichzeitig** (z. B. 0.25.0 und 0.26.0, wobei 0.26.0 laut Release Notes zuerst 0.25.0 voraussetzt). Deshalb wertet das Skript **alle** Einträge der Seite aus und zeigt jede Version, die neuer ist als die installierte - nicht nur die neueste.
 
 Ist ein Update verfügbar, werden angezeigt:
 - Aktuell installierte Version
-- Verfügbare Online-Version
-- Veröffentlichungsdatum
-- Release Notes (werden direkt von der TP-Link-Seite geladen und unverändert ausgegeben)
+- **Alle** verfügbaren neueren Versionen
+- Bei mehreren Versionen: die Reihenfolge, in der aktualisiert werden muss (z. B. `0.25.0 ➜ 0.26.0`)
+- Veröffentlichungsdatum und Release Notes je Version (werden direkt von der TP-Link-Seite geladen und unverändert ausgegeben)
+
+Wurde gerade aktualisiert (innerhalb von 48 Stunden), erscheinen die Release Notes **aller** Versionen seit dem vorherigen Stand - beim Sprung von 0.24 auf 0.26 also 0.26.0 **und** 0.25.0.
 
 > **Hinweis:** TP-Link stellt die Release Notes nicht in strukturierter Form bereit. Die Darstellung kann sich von Version zu Version unterscheiden.
 

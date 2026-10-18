@@ -48,7 +48,7 @@ main() {
 
             if [ -z "$FILES" ]; then
                 error "Dateiliste konnte nicht geladen werden (GitHub API Limit?)."
-                FILES="tp-report.py arp_scan.py requirements.txt config-report.ini.sample setup_ai_key.sh tp-report-setup-guide.md"
+                FILES="tp-report.py routerlog.py arp_scan.py requirements.txt config-report.ini.sample setup_ai_key.sh tp-report-setup-guide.md"
                 info "Nutze Fallback-Dateiliste."
             fi
             

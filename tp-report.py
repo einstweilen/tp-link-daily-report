@@ -11,6 +11,17 @@ import sys
 import time
 import os
 import re
+
+try:
+    import routerlog          # Logformat-Auswertung (liegt neben dieser Datei)
+except ImportError:
+    raise SystemExit("Fehler: routerlog.py fehlt. Bitte install_report.sh erneut ausfuehren "
+                     "(oder routerlog.py neben tp-report.py kopieren).")
+
+# Typ-Filter für SQL-Abfragen - gepflegt in routerlog.py (gilt für alt und neu)
+PPP_TYPES_SQL = routerlog.sql_in(routerlog.PPP_EVENT_TYPES)
+HTTPD_TYPES_SQL = routerlog.sql_in(routerlog.HTTPD_EVENT_TYPES)
+HIDDEN_TYPES_SQL = routerlog.sql_in(routerlog.HIDDEN_EVENT_TYPES)
 import logging
 import base64
 import io
@@ -202,7 +213,7 @@ class ConfigManager:
         }
         self.config['Events'] = {
             'hours_back': '24',
-            'exclude_types': 'Mesh, DHCPD',
+            'exclude_types': 'VoIP',   # Zusatztypen; Clientereignisse filtert der Code selbst
             'show_level': '4'
         }
         self.config['Statistics'] = {
@@ -461,11 +472,15 @@ class RouterAPI:
     def downloadrouterlog_to_memory(self):
         if not self.router and not self.login(): return None
         try:
+            # Der Datei-Download (/cgi/log?down) ist auf der aktuellen Firmware
+            # zuverlässig; der verschlüsselte Weg scheitert dort mit "Incorrect padding".
+            text = self._downloadrouterlog_http_fallback()
+            if text:
+                return text
+            self._log("HTTP-Download ohne Ergebnis, versuche verschlüsselten API-Weg...")
             url = self.router._get_url('cgi/log')
             code, response = self.router._request(url, data_str="", encrypt=True)
-            if code == 200:
-                return re.sub(r"(202\d-)", r"\n\1", response, count=1)
-            return self._downloadrouterlog_http_fallback()
+            return routerlog.clean_log_text(response) if code == 200 else None
         except Exception as e:
             self._log(f"Verschlüsselter Log-Download fehlgeschlagen ({e}), versuche HTTP-Fallback...")
             return self._downloadrouterlog_http_fallback()
@@ -497,7 +512,7 @@ class RouterAPI:
 
             if logcontent and len(logcontent) > 20:
                 self._log(f"HTTP-Fallback erfolgreich: {len(logcontent)} Zeichen.")
-                return re.sub(r"(202\d-)", r"\n\1", logcontent, count=1)
+                return routerlog.clean_log_text(logcontent)
             return None
         except Exception as e:
             self._log(f"HTTP-Fallback fehlgeschlagen: {e}")
@@ -769,6 +784,14 @@ class DatabaseManager:
                 type TEXT, event_text TEXT, UNIQUE (time_ut, level_id, type, event_text))''')
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_time_ut ON events (time_ut)")
 
+            # Migration (Firmware 0.26.0): strukturierte Log-Daten (MAC/IP/Meldungs-ID)
+            cursor.execute("PRAGMA table_info(events)")
+            cols = {row[1] for row in cursor.fetchall()}
+            for col, decl in (("msgid", "TEXT"), ("mac", "TEXT"), ("ip", "TEXT"), ("sd", "TEXT")):
+                if col not in cols:
+                    cursor.execute(f"ALTER TABLE events ADD COLUMN {col} {decl}")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_msgid_mac ON events (time_ut, msgid, mac)")
+
     def _run_query(self, sql, params=None):
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -829,110 +852,69 @@ class DatabaseManager:
         with sqlite3.connect(self.db_path) as conn:
             conn.executemany("INSERT OR REPLACE INTO clients (mac, time_ut, type, hostname, ip, signal_strength, is_connected, bytes_total, bytes_received, bytes_sent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", batch)
 
+    # --- Log-Import -----------------------------------------------------------
+    # Formatwissen und Zeitstempel-Korrektur liegen in routerlog.py (identisch in beiden
+    # Projekten) - hier bleibt nur das Speichern in der Datenbank.
     def insert_events_from_log(self, logcontent_or_path):
-        """Importiert Router-Log-Zeilen mit Boot-Timestamp-Korrektur (nur natives Format)."""
         from pathlib import Path
         if isinstance(logcontent_or_path, str) and '\n' in logcontent_or_path:
             lines = logcontent_or_path.splitlines()
         else:
             logpath = Path('logs') / logcontent_or_path
-            if not logpath.exists(): return 0
+            if not logpath.exists():
+                return 0
             with open(logpath, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
 
-        parsed_events = []
+        events, ignored = [], 0
         for line in lines:
-            event = self._parse_router_log_line(line)
+            if not line.strip():
+                continue
+            event = routerlog.parse_line(line)
             if event:
-                parsed_events.append(event)
+                events.append(event)
+            else:
+                ignored += 1
 
-        if not parsed_events:
+        if ignored:
+            print(f"Log: {ignored} Zeile(n) ohne erkennbares Format uebersprungen.")
+        if not events:
             return 0
 
-        normalized_events = self._normalize_router_log_timestamps(parsed_events)
-        if not normalized_events:
-            return 0
-
-        inserted_count = 0
+        events = routerlog.prepare_events(events)
+        inserted, dupes, last_state = 0, 0, {}
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            for e in normalized_events:
-                cursor.execute(
-                    'INSERT OR IGNORE INTO events (time_ut, level_id, type, event_text) VALUES (?, ?, ?, ?)',
-                    (e['time_ut'], e['level_id'], e['type'], e['event_text']))
-                inserted_count += cursor.rowcount
+            for e in events:
+                time_ut = e['time_ut']
+                state = routerlog.wifi_state(e.get('msgid'), e['event_text'])
+                mac = e.get('mac')
+                if mac and state:
+                    prev = last_state.get((mac, state))
+                    if prev is not None and abs(time_ut - prev) <= routerlog.DEDUPE_WINDOW_S:
+                        dupes += 1
+                        continue
+                    last_state[(mac, state)] = time_ut
 
-        return inserted_count
+                cursor.execute(
+                    "INSERT OR IGNORE INTO events "
+                    "(time_ut, level_id, type, event_text, msgid, mac, ip, sd) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (time_ut, e['level_id'], e['type'], e['event_text'],
+                     e.get('msgid'), mac, e.get('ip'), e.get('sd')),
+                )
+                inserted += cursor.rowcount
+        if dupes:
+            print(f"Log: {dupes} doppelte WLAN-Ereignisse entprellt.")
+        return inserted
 
     def _parse_router_log_line(self, line):
-        """Parst eine native Router-Log-Zeile: 2026-10-10 10:23:47 [6] DHCPD: Text..."""
-        s = line.strip()
-        if not s or len(s) < 19:
-            return None
-        try:
-            dt = datetime.strptime(s[:19], '%Y-%m-%d %H:%M:%S')
-            rest = s[20:].strip()
-            if not rest.startswith('['):
-                return None
-            rb = rest.find(']')
-            if rb <= 1:
-                return None
-            level_id = int(rest[1:rb])
-            payload = rest[rb + 1:].strip()
-            sep = payload.find(': ')
-            if sep <= 0:
-                return None
-            return {
-                'dt': dt,
-                'time_ut': int(dt.timestamp()),
-                'level_id': level_id,
-                'type': payload[:sep].strip(),
-                'event_text': payload[sep + 2:].strip(),
-            }
-        except Exception:
-            return None
+        """Kompatibilitaets-Wrapper - Formatwissen liegt in routerlog.parse_line()."""
+        return routerlog.parse_line(line)
 
     def _normalize_router_log_timestamps(self, events):
-        """Korrigiert falsche Boot-Timestamps am Log-Anfang via Heuristik.
-
-        Der Router schreibt beim Booten (solange die Uhrzeit noch nicht synchronisiert
-        ist) Events mit falschem Timestamp. Sobald die Zeit stimmt, entsteht ein großer
-        positiver Sprung (>= 6h). Alle Events VOR diesem Sprung werden um das gleiche
-        Delta verschoben, sodass sie zeitlich korrekt eingeordnet werden.
-        """
-        if len(events) < 2:
-            return events
-
-        min_anchor_jump_seconds = 6 * 3600
-        max_future_skew_seconds = 600
-
-        corrected = [dict(e) for e in events]
-        now_ut = int(time.time())
-        n = len(corrected)
-
-        for idx in range(1, n):
-            prev_ev = corrected[idx - 1]
-            curr_ev = corrected[idx]
-            delta = curr_ev['time_ut'] - prev_ev['time_ut']
-
-            if delta < min_anchor_jump_seconds:
-                continue
-            if curr_ev['time_ut'] > (now_ut + max_future_skew_seconds):
-                continue
-            if delta <= 0:
-                continue
-
-            for k in range(0, idx):
-                corrected[k]['time_ut'] += delta
-                corrected[k]['dt'] = datetime.fromtimestamp(corrected[k]['time_ut'])
-
-            # Plausibilitätsprüfung: wenn die korrigierten Events immer noch
-            # zeitlich nach dem Anchor liegen, verwerfen
-            if corrected[idx - 1]['time_ut'] > corrected[idx]['time_ut']:
-                return events
-            return corrected
-
-        return events
+        """Kompatibilitaets-Wrapper - siehe routerlog.normalize_timestamps()."""
+        return routerlog.normalize_timestamps(events)
 
     def purge_old_events(self, days, event_types, debug=False):
         if days <= 0 or not event_types: return
@@ -1159,130 +1141,14 @@ class Reporter:
         return False, old_fw, act_fw, []
 
     def _build_client_sessions(self, hours=24):
+        """Client-Sitzungen aus den Log-Ereignissen (Formatwissen: routerlog.py)."""
         start_ts = int((datetime.now() - timedelta(hours=hours)).timestamp())
-        sql = "SELECT time_ut, type, event_text FROM events WHERE time_ut >= ? AND type IN ('Mesh', 'DHCPD') ORDER BY time_ut ASC"
-        _, rows = self.db._run_query(sql, params=[start_ts])
-
-        def extract_mac(text):
-            s = (text or "").upper().replace("-", ":")
-            allowed = "0123456789ABCDEF:"
-            tokens = []
-            cur = []
-            for ch in s:
-                if ch in allowed:
-                    cur.append(ch)
-                else:
-                    if cur:
-                        tokens.append("".join(cur))
-                        cur = []
-            if cur:
-                tokens.append("".join(cur))
-
-            for tok in tokens:
-                parts = tok.split(":")
-                if len(parts) == 6 and all(len(p) == 2 and all(c in "0123456789ABCDEF" for c in p) for p in parts):
-                    return ":".join(parts)
-            return None
+        _, rows = self.db._run_query(routerlog.SESSION_SQL, params=[start_ts])
 
         router_ip = self.config.get('Router', 'router_ip', fallback='192.168.1.1')
         parts = router_ip.split('.')
-        home_subnet = f"{parts[0]}.{parts[1]}.{parts[2]}." if len(parts) == 4 else "192.168.1."
+        return routerlog.build_client_sessions(rows, self._home_subnet())
 
-        def detect_network_type(text):
-            m = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', text)
-            if m:
-                ip = m.group(1)
-                return 'home' if ip.startswith(home_subnet) else 'guest'
-            return None
-
-        current_time = datetime.now().timestamp()
-        
-        # PHASE 1: DHCP Correlation (DISCOVER -> OFFER)
-        mac_network_assignments = {}
-        pending_discovers = {} 
-        pending_offers = {} 
-
-        for r in rows:
-            ts = int(r[0])
-            text = r[2]
-            event_type = r[1]
-
-            if event_type == 'DHCPD':
-                if 'Recv DISCOVER from' in text:
-                    mac = extract_mac(text)
-                    if mac:
-                        if mac not in pending_discovers:
-                            pending_discovers[mac] = []
-                        pending_discovers[mac].append(ts)
-                elif 'Send OFFER with ip' in text or 'Send ACK to' in text:
-                    net_type = detect_network_type(text)
-                    if net_type:
-                        if net_type not in pending_offers:
-                            pending_offers[net_type] = []
-                        pending_offers[net_type].append(ts)
-
-        TIME_WINDOW = 10 
-        for mac, discover_times in pending_discovers.items():
-            for disc_ts in discover_times:
-                for net_type, offer_times in pending_offers.items():
-                    for offer_ts in offer_times:
-                        if abs(offer_ts - disc_ts) <= TIME_WINDOW:
-                            if mac not in mac_network_assignments:
-                                mac_network_assignments[mac] = []
-                            mac_network_assignments[mac].append((disc_ts, net_type))
-                            break
-
-        # PHASE 2: Session Builder
-        client_activity = {}
-        for r in rows:
-            ts = int(r[0])
-            text = r[2]
-            mac = extract_mac(text)
-            if not mac: continue
-
-            if mac not in client_activity:
-                client_activity[mac] = []
-
-            is_start = "Add Client" in text or "REQUEST" in text or "DISCOVER" in text
-            is_end = "Del Client" in text
-            sessions = client_activity[mac]
-
-            if is_start:
-                if not sessions or sessions[-1]['end'] is not None:
-                    network = 'home'
-                    if mac in mac_network_assignments:
-                        closest = None
-                        min_diff = float('inf')
-                        for assign_ts, net in mac_network_assignments[mac]:
-                            diff = abs(ts - assign_ts)
-                            if diff <= TIME_WINDOW and diff < min_diff:
-                                min_diff = diff
-                                closest = net
-                        if closest:
-                            network = closest
-                    # Fallback: Netzwerk-Zugehörigkeit über die IP in der clients-Tabelle
-                    try:
-                        _, ip_rows = self.db._run_query(
-                            "SELECT ip FROM clients WHERE mac = ?", params=(mac,)
-                        )
-                        if ip_rows and ip_rows[0][0]:
-                            client_ip = ip_rows[0][0]
-                            if client_ip.startswith(home_subnet):
-                                network = 'home'
-                            else:
-                                network = 'guest'
-                    except Exception:
-                        pass
-                    sessions.append({'start': ts, 'end': None, 'network': network})
-            elif is_end:
-                if sessions and sessions[-1]['end'] is None:
-                    sessions[-1]['end'] = ts
-
-        for mac, sessions in client_activity.items():
-            if sessions and sessions[-1]['end'] is None:
-                sessions[-1]['end'] = current_time
-
-        return client_activity
 
     def _get_connected_clients(self, hours=24):
         client_activity = self._build_client_sessions(hours=hours)
@@ -1372,7 +1238,8 @@ class Reporter:
 
     def _get_connection_status(self):
         # Verbunden seit: neuester erfolgreicher PPP-Connect
-        sql_evt = "SELECT time_ut FROM events WHERE type = 'PPP' AND event_text LIKE '%PAP AuthAck%' ORDER BY time_ut DESC LIMIT 1"
+        sql_evt = (f"SELECT time_ut FROM events WHERE type IN ({PPP_TYPES_SQL}) AND event_text LIKE '%AuthAck%' "
+                   "ORDER BY time_ut DESC LIMIT 1")
         _, r_evt = self.db._run_query(sql_evt)
         sql_dsl = "SELECT ip4_curr, ip6_curr, downstream_curr_rate, upstream_curr_rate FROM dsl ORDER BY time_ut DESC LIMIT 1"
         _, r_dsl = self.db._run_query(sql_dsl)
@@ -1423,7 +1290,7 @@ class Reporter:
         return None, None
 
     def _analyze_ppp_events(self, hours=24):
-        main_query = """
+        main_query = f"""
         WITH RawData AS (
             SELECT time_ut, datetime(time_ut, 'unixepoch', 'localtime') AS ts, 
                    strftime('%H:%M', datetime(time_ut, 'unixepoch', 'localtime')) AS clock, 
@@ -1435,7 +1302,7 @@ class Reporter:
                 ELSE 4 
             END as p
             FROM events 
-            WHERE type = 'PPP' AND (event_text LIKE '%User request%' OR event_text LIKE '%LCP down%' OR event_text LIKE '%AuthAck%')
+            WHERE type IN ({PPP_TYPES_SQL}) AND (event_text LIKE '%User request%' OR event_text LIKE '%LCP down%' OR event_text LIKE '%AuthAck%')
         ),
         Deduplicated AS (
             SELECT * FROM (SELECT *, ROW_NUMBER() OVER(PARTITION BY time_ut ORDER BY p) as rn FROM RawData) WHERE rn = 1
@@ -1485,7 +1352,7 @@ class Reporter:
     def _get_connection_analysis(self, hours=24):
         threshold_slow_reconnect = 45
         events = self._analyze_ppp_events(hours)
-        min_level = self.config.getint('Analyse', 'report_disconnects_level', fallback=1)
+        min_level = routerlog.config_int(self.config, 'Analyse', 'report_disconnects_level', 1)
         
         start_ts = int((datetime.now() - timedelta(hours=hours)).timestamp())
         start_ts_dsl = int((datetime.now() - timedelta(hours=hours + 2)).timestamp())
@@ -1494,7 +1361,7 @@ class Reporter:
             _, pado_rows = self.db._run_query("SELECT COUNT(*) FROM events WHERE event_text LIKE '%PADO Timeout%' AND time_ut >= ?", [start_ts])
             pado_count = pado_rows[0][0] if pado_rows else 0
 
-            _, dns_rows = self.db._run_query("SELECT datetime(time_ut, 'unixepoch', 'localtime') as ts FROM events WHERE type = 'Httpd' AND event_text LIKE '%failed%' AND time_ut >= ?", [start_ts])
+            _, dns_rows = self.db._run_query(f"SELECT datetime(time_ut, 'unixepoch', 'localtime') as ts FROM events WHERE type IN ({HTTPD_TYPES_SQL}) AND event_text LIKE '%failed%' AND time_ut >= ?", [start_ts])
             dns_errors = [r[0] for r in dns_rows]
             
             _, dsl_rows = self.db._run_query(
@@ -1751,18 +1618,18 @@ class Reporter:
         """
         Numerische Auflistung der Reconnect-Blöcke für die Fehlerdiagnose.
         """
-        evt_hours = self.config.getint('Events', 'hours_back', fallback=24)
+        evt_hours = routerlog.config_int(self.config, 'Events', 'hours_back', 24)
         start_ts = int((datetime.now() - timedelta(hours=evt_hours)).timestamp())
         end_ts = int(datetime.now().timestamp())
 
         start_str = datetime.fromtimestamp(start_ts).strftime('%d.%m.%Y %H:%M')
         end_str = datetime.fromtimestamp(end_ts).strftime('%d.%m.%Y %H:%M')
 
-        sql = """
+        sql = f"""
               SELECT time_ut, type, event_text
               FROM events
               WHERE time_ut >= ?
-                AND type NOT IN ('Mesh', 'DHCPD')
+                AND type NOT IN ({HIDDEN_TYPES_SQL})
               ORDER BY time_ut ASC
               """
         _, rows = self.db._run_query(sql, [start_ts])
@@ -2039,7 +1906,7 @@ class Reporter:
 
     def _get_snr_stats(self, table, field, hours_back):
         now = datetime.now()
-        moving_avg_days = self.config.getint('Charts', 'moving_average_days', fallback=7)
+        moving_avg_days = routerlog.config_int(self.config, 'Charts', 'moving_average_days', 7)
         
         # 1. hours_back stats
         start_hb = int((now - timedelta(hours=hours_back)).timestamp())
@@ -2076,7 +1943,7 @@ class Reporter:
         import matplotlib.dates as mdates
         charts = []
         
-        moving_avg_days = self.config.getint('Charts', 'moving_average_days', fallback=7)
+        moving_avg_days = routerlog.config_int(self.config, 'Charts', 'moving_average_days', 7)
         
         for i in range(1, 5):
             table = self.config.get('Charts', f'table_{i}', fallback=None)
@@ -2237,7 +2104,8 @@ class Reporter:
 
     def _get_reconnect_stats(self, hours):
         start_ts = int((datetime.now() - timedelta(hours=hours)).timestamp())
-        sql = "SELECT time_ut, type, event_text FROM events WHERE time_ut >= ? AND type NOT IN ('Mesh', 'DHCPD') ORDER BY time_ut ASC"
+        sql = (f"SELECT time_ut, type, event_text FROM events WHERE time_ut >= ? "
+               f"AND type NOT IN ({HIDDEN_TYPES_SQL}) ORDER BY time_ut ASC")
         _, rows = self.db._run_query(sql, [start_ts])
         reconnects = 0
         current_reconnect = None
@@ -2265,6 +2133,12 @@ class Reporter:
             return days, hours
         return None
 
+    def _home_subnet(self):
+        """Heimnetz-Präfix für die Heim/Gast-Unterscheidung (aus routerip)."""
+        router_ip = self.config.get('Router', 'router_ip', fallback='192.168.1.1')
+        parts = router_ip.split('.')
+        return f"{parts[0]}.{parts[1]}.{parts[2]}." if len(parts) == 4 else "192.168.1."
+
     def generate_report(self, send_email=True, show_browser=False):
         import smtplib
         from email.mime.image import MIMEImage
@@ -2279,8 +2153,8 @@ class Reporter:
             self.debug_print_timeline_data()
         model_name = self._get_latest_model_name()
         date_str = datetime.now().strftime('%d.%m.%Y')
-        hours_back = self.config.getint('Charts', 'hours_back', fallback=24)
-        evt_hours = self.config.getint('Events', 'hours_back', fallback=24)
+        hours_back = routerlog.config_int(self.config, 'Charts', 'hours_back', 24)
+        evt_hours = routerlog.config_int(self.config, 'Events', 'hours_back', 24)
         exclude = [t.strip() for t in self.config.get('Events', 'exclude_types', fallback='').split(',') if t.strip()]
         conn_since, ip4, ip6, down, up = self._get_connection_status()
         uptime_data = self._get_router_uptime()
@@ -2295,7 +2169,7 @@ class Reporter:
         clients = self._get_connected_clients(evt_hours)
         traffic = self._get_data_volume_clients()
         charts = self._generate_charts(hours_back)
-        show_level = self.config.getint('Events', 'show_level', fallback=4)
+        show_level = routerlog.config_int(self.config, 'Events', 'show_level', 4)
         events = self._get_events(24, exclude, show_level)
         
         msg_root = MIMEMultipart('mixed')
@@ -2522,7 +2396,7 @@ class Reporter:
                 img.add_header('Content-ID', f'<chart_{idx}>')
                 msg_rel.attach(img)
             try:
-                srv = smtplib.SMTP(self.config.get('Email', 'smtp_server'), self.config.getint('Email', 'smtp_port'))
+                srv = smtplib.SMTP(self.config.get('Email', 'smtp_server'), routerlog.config_int(self.config, 'Email', 'smtp_port'))
                 srv.starttls()
                 srv.login(self.config.get('Email', 'sender_email'), self.config.get('Email', 'sender_password'))
                 srv.send_message(msg_root)
@@ -2534,7 +2408,7 @@ class Reporter:
     def _cleanup_old_reports(self):
         import time
         from pathlib import Path
-        cleanup_days = self.config.getint('Reports', 'cleanup_reports', fallback=0)
+        cleanup_days = routerlog.config_int(self.config, 'Reports', 'cleanup_reports', 0)
         if cleanup_days > 0:
             reports_dir = Path('reports')
             if reports_dir.exists() and reports_dir.is_dir():

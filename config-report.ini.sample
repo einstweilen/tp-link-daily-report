@@ -70,18 +70,24 @@ moving_average_days = 7
 
 [Events]
 # Zeitraum für das Routereventlog und die AI Analyse
-hours_back = 24      # Zeitraum der Events in Stunden gemessen vom Zeitpunkt der Reportgenerierung
-start_hour = 0       # Startstunde der Events (0 = Mitternacht)
+# Zeitraum der Events in Stunden gemessen vom Zeitpunkt der Reportgenerierung
+hours_back = 24
+# Startstunde der Events (0 = Mitternacht)
+start_hour = 0
 
 # Ausgeschlossene Event-Typen für das Log und die Analyse
-exclude_types = Mesh, DHCPD, VoIP
+# Zusatztypen, die nicht in der Ereignisliste erscheinen (Clientereignisse
+# filtert das Programm selbst):
+exclude_types = VoIP
 
 # Log Level Filter: 0 Notfall   1 Alarm    2 Kritisch  3 Fehler 
 #                   4 Vorsicht  5 Hinweis  6 Info      7 Debug (zeigt alles)
 #                   9 zeigt alles wie 7 Debug aber filtert die 'exclude_types' aus
-show_level = 4      # bis einschließlich dieses Levels anzeigen
+# bis einschließlich dieses Levels anzeigen
+show_level = 4
 
-cleanup_excludes = 3 # Tage bis alte Events vom Typ 'exclude_types' aus der Datenbank gelöscht werden
+# Tage bis alte Events vom Typ 'exclude_types' aus der Datenbank gelöscht werden
+cleanup_excludes = 3
 
 [Reports]
 # Alte Tagesreports löschen (0 = deaktiviert)

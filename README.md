@@ -2,6 +2,17 @@
 
 
  
+> ### ⚠️ Update 18.10.2026 – Router-Firmware 0.26.0
+> Seit Firmware **231.0.26** schreibt der VX231v ein neues Logformat (RFC5424 mit Structured Data).
+> Ältere Versionen erkennen **Client-An-/Abmeldungen nicht mehr** (Geräte erscheinen 24 h online).
+>
+> **Update:** `./install_report.sh` erneut ausführen (oder `git pull`) – die Migration läuft
+> automatisch. Für die **Alt-Historie** einmalig: `python3 backfill_events.py --db config-report.ini`
+> (Pfad aus `[Database] db_name`). Voraussetzung: `routerlog.py` liegt neben `tp-report.py`
+> (liefert `install_report.sh` mit).
+>
+> Details: [Release Notes](https://github.com/einstweilen/tp-link-daily-report/blob/main/docu/release_notes.md)
+
 ### [TP-Link Daily Report](docu/statusreport_doku.md)
 Ein Python-Skript (`tp-report.py`) zur automatisierten Erfassung der DSL, Client und Logdaten des Routers.<br>
 Optionale Erstellung und Versand eines täglichen Statusreports per E-Mail.

@@ -28,6 +28,7 @@ Wichtig: MAC/IP stehen ab 0.26.0 in den *Structured Data* (``staMac``, ``MAC``,
 """
 
 import re
+import socket
 from datetime import datetime, timezone
 
 # --- Formate -----------------------------------------------------------------
@@ -79,6 +80,46 @@ PPP_EVENT_TYPES = ("PPP", "pppd")
 
 #: HTTP-Zugriffe/Login-Fehler (Alt- und Neu-Typ)
 HTTPD_EVENT_TYPES = ("Httpd", "httpd")
+
+#: Textmarker einer Anmeldung (WLAN) - auch für den Ereignisfilter genutzt
+WIFI_UP_MARKERS = ("is associated", "connected success", "add client")
+
+#: Textmarker einer Abmeldung (WLAN)
+WIFI_DOWN_MARKERS = ("disassociated", "disconnected", "del client")
+
+# --- Ereignisfilter der Ereignisliste (Regeln A-E) ----------------------------
+
+#: Regel A: Typen, bei denen ein Zugriff mit eigener IP als eigener Abruf gilt
+OWN_ACTIVITY_TYPES = ("httpd", "cloud_https")
+
+#: Regel E: immer ausgeblendet - reine DHCP-Routine (neu und Alt-Typ)
+ALWAYS_HIDDEN_TYPES = ("dhcpd", "DHCPD")
+
+#: Regel B: Eigen-Routine (Abmeldung aller Sitzungen bei jedem eigenen Login)
+OWN_ROUTINE_TYPES = ("tmpd",)
+
+#: Regel C: HTTP-Meldungen ohne Aussage - Fehlschläge bleiben sichtbar
+ROUTINE_HTTPD_TEXTS = (
+    "Login success!",
+    "Logout success!",
+    "Log file exported.",
+    "The last login is expired, set to anonymous.",
+)
+
+#: Regel D: von diesen Typen nur An-/Abmeldungen ausblenden (Fehler bleiben sichtbar)
+SESSION_EVENT_TYPES = ("mapAgent", "mapController", "Mesh")
+
+#: Regel E: Alias-Tabelle - alte Config-Schreibweise (NOCASE) -> App-Name im neuen Format
+TYPE_ALIASES = {
+    "voip": ("voip_client",),
+    "mesh": ("mapAgent", "mapController"),
+    "dhcpd": ("dhcpd", "DHCPD"),
+}
+
+#: Alias-Einträge, die nur die Sitzungsmeldungen meinen: die Typen selbst bleiben in
+#: der Ausschlussliste (historische Zeilen heißen so), die neuen App-Namen filtert
+#: Regel D - dadurch bleiben deren Fehlermeldungen ("Connection Fail ...") sichtbar.
+SESSION_ONLY_ALIASES = ("mesh",)
 
 #: Zeitfenster, in dem DHCP-Antwort und WLAN-Ereignis zusammengehören (Sekunden)
 MATCH_WINDOW_S = 10
@@ -403,9 +444,9 @@ def wifi_state(msgid, text):
     if (msgid or '').upper() != 'WIFI_EVENT':
         return None
     m = (text or '').lower()
-    if 'disassociated' in m or 'disconnected' in m or 'del client' in m:
+    if any(marker in m for marker in WIFI_DOWN_MARKERS):
         return 'down'
-    if 'is associated' in m or 'connected success' in m or 'add client' in m:
+    if any(marker in m for marker in WIFI_UP_MARKERS):
         return 'up'
     return None
 
@@ -600,3 +641,155 @@ def config_int(config, section, key, default=0):
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+def config_bool(config, section, key, default=True):
+    """Schalter aus der Konfiguration (``True``/``ja``/``an``/``1`` …)."""
+    raw = _config_value(config, section, key).split('#', 1)[0].strip().lower()
+    if not raw:
+        return default
+    return raw in ('1', 'true', 'yes', 'ja', 'on', 'wahr', 'an')
+
+
+def _config_value(config, section, key, default=''):
+    """Rohwert aus der Konfiguration - ohne Fehler bei fehlender Section."""
+    try:
+        if not config.has_section(section):
+            return default
+        return str(config.get(section, key, fallback=default))
+    except (AttributeError, TypeError):
+        return default
+
+
+def router_host(config):
+    """Router-Adresse aus der Konfiguration (beide Projekte nutzen andere Schlüssel)."""
+    for key in ('routerip', 'router_ip', 'host'):
+        value = _config_value(config, 'Router', key).split('#', 1)[0].strip()
+        if value:
+            return value
+    return None
+
+
+# --- Ereignisfilter: eigene Abrufe und Routine ausblenden ---------------------
+
+def local_ip_addresses(target_host=None):
+    """Eigene IPv4-Adressen dieses Rechners (für Regel A der Ereignisliste).
+
+    ``socket.gethostbyname(hostname)`` liefert auf dem Pi nur ``127.0.1.1``, deshalb
+    wird die Adresse über einen verbindungslosen UDP-Socket zum Router ermittelt
+    (es werden keine Pakete gesendet). Die Namensauflösung bleibt als Rückfall.
+    """
+    found = []
+    targets = [t for t in (target_host, '8.8.8.8') if t]
+    for target in targets:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect((target, 80))
+            ip = sock.getsockname()[0]
+        except OSError:
+            continue
+        finally:
+            if sock is not None:
+                sock.close()
+        if ip and not ip.startswith('127.') and ip not in found:
+            found.append(ip)
+    if not found:
+        try:
+            ip = socket.gethostbyname(socket.gethostname())
+            if ip and not ip.startswith('127.'):
+                found.append(ip)
+        except OSError:
+            pass
+    return found
+
+
+def own_ip_list(config=None, section='Events', key='own_ips'):
+    """Eigene IP-Adressen für Regel A: aus der Konfiguration, sonst automatisch."""
+    raw = _config_value(config, section, key).split('#', 1)[0]
+    ips = [part for part in re.split(r'[,;\s]+', raw) if part]
+    if ips:
+        return ips
+    return local_ip_addresses(router_host(config))
+
+
+def expand_exclude_types(values):
+    """Erweitert Typ-Listen aus der Konfiguration um die Namen des neuen Formats (Regel E).
+
+    Der eingetragene Name bleibt erhalten (historische Zeilen heißen so) und die
+    App-Namen des neuen Formats kommen hinzu - ``VoIP`` wirkt damit auf ``voip_client``,
+    ``DHCPD`` auf ``dhcpd``. ``Mesh`` meinte schon immer die WLAN-An-/Abmeldungen: diese
+    blendet Regel D aus (samt den neuen App-Namen), damit deren Fehlermeldungen
+    (``Connection Fail ...``) sichtbar bleiben.
+    """
+    expanded = []
+    for value in values or []:
+        name = (value or '').strip()
+        if not name:
+            continue
+        if name not in expanded:
+            expanded.append(name)
+        if name.lower() in SESSION_ONLY_ALIASES:
+            continue
+        for target in TYPE_ALIASES.get(name.lower(), ()):
+            if target not in expanded:
+                expanded.append(target)
+    return expanded
+
+
+def sql_marks(values):
+    """Platzhalter für ``IN (...)`` - passend zu den Werten als Parameter."""
+    return ", ".join("?" for _ in values)
+
+
+def event_where(config=None, exclude_types=None, show_level=4):
+    """SQL-Bedingung und Parameter für die Ereignisliste (Regeln A-E).
+
+    Rückgabe: ``(clause, params)``. ``clause`` beginnt mit ``AND`` und wird an
+    ``WHERE time_ut >= ?`` angehängt; die Parameter gehören in derselben Reihenfolge
+    in die Parameterliste. Beide Projekte filtern ihre Ereignisliste ausschließlich
+    über diesen Helfer, damit die Regeln identisch bleiben.
+    """
+    params, parts = [], []
+
+    excluded = expand_exclude_types(exclude_types)
+    if show_level == 9:
+        # 9 = alles anzeigen, nur die Ausschlusstypen filtern
+        if excluded:
+            parts.append("AND type COLLATE NOCASE NOT IN (%s)" % sql_marks(excluded))
+            params.extend(excluded)
+    elif excluded:
+        # Fehler/Warnungen (Level <= 4) bleiben sichtbar, obwohl ihr Typ gefiltert ist
+        parts.append("AND (type COLLATE NOCASE NOT IN (%s) OR level_id <= 4) AND level_id <= ?"
+                     % sql_marks(excluded))
+        params.extend(excluded)
+        params.append(show_level)
+    else:
+        parts.append("AND level_id <= ?")
+        params.append(show_level)
+
+    hidden = ["type COLLATE NOCASE IN (%s)" % sql_in(ALWAYS_HIDDEN_TYPES)]   # Regel E
+    if config_bool(config, 'Events', 'hide_own_activity', True):
+        hidden.append("type COLLATE NOCASE IN (%s)" % sql_in(OWN_ROUTINE_TYPES))   # Regel B
+
+        ips = own_ip_list(config)                                                  # Regel A
+        if ips:
+            matches = []
+            for ip in ips:
+                matches.append("(IFNULL(event_text, '') LIKE ? OR IFNULL(sd, '') LIKE ?)")
+                params.extend(['%%%s%%' % ip, '%%%s%%' % ip])
+            hidden.append("(type COLLATE NOCASE IN (%s) AND (%s))"
+                          % (sql_in(OWN_ACTIVITY_TYPES), " OR ".join(matches)))
+
+        hidden.append("(type COLLATE NOCASE = 'httpd' AND TRIM(event_text) IN (%s))"
+                      % sql_in(ROUTINE_HTTPD_TEXTS))                               # Regel C
+
+        matches = []
+        for marker in WIFI_UP_MARKERS + WIFI_DOWN_MARKERS:                          # Regel D
+            matches.append("IFNULL(event_text, '') LIKE ?")
+            params.append('%%%s%%' % marker)
+        hidden.append("(type COLLATE NOCASE IN (%s) AND (%s))"
+                      % (sql_in(SESSION_EVENT_TYPES), " OR ".join(matches)))
+
+    parts.append("AND NOT (%s)" % " OR ".join(hidden))
+    return " ".join(parts), params

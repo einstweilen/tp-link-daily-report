@@ -77,8 +77,19 @@ start_hour = 0
 
 # Ausgeschlossene Event-Typen für das Log und die Analyse
 # Zusatztypen, die nicht in der Ereignisliste erscheinen (Clientereignisse
-# filtert das Programm selbst):
+# filtert das Programm selbst). Alte Namen wirken weiter: VoIP blendet auch
+# voip_client aus.
 exclude_types = VoIP
+
+# Eigene Abrufe und Routine aus der Ereignisliste ausblenden:
+#   - Zugriffe von der eigenen IP (httpd/cloud_https)
+#   - tmpd ("Logout all users.") und die httpd-Erfolgsmeldungen
+#   - An-/Abmeldungen der WLAN-Clients (mapAgent/mapController)
+# Fehlermeldungen bleiben sichtbar (z. B. "Login failed!", "Connection Fail ...").
+hide_own_activity = True
+# Eigene IP-Adressen fuer die Erkennung eigener Abrufe (Komma-getrennt).
+# Leer = automatisch ermitteln (Adresse dieses Rechners im Router-Netz).
+own_ips =
 
 # Log Level Filter: 0 Notfall   1 Alarm    2 Kritisch  3 Fehler 
 #                   4 Vorsicht  5 Hinweis  6 Info      7 Debug (zeigt alles)

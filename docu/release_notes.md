@@ -2,6 +2,23 @@
 
 Funktionellen Änderungen, Features und wichtigen Verbesserungen des TP-Link Status Report Projekts im Überblick.
 
+## 18.10.2026
+
+**Ereignisliste auf das Wesentliche reduziert (eigene Abrufe und Routine ausgeblendet)**
+
+* Neuer Schalter `[Events] hide_own_activity` (Standard `True`): Ausgeblendet werden die eigenen
+  Abrufe (`httpd`/`cloud_https` von der eigenen IP), `tmpd` ("Logout all users."), die
+  HTTP-Erfolgsmeldungen und die An-/Abmeldungen der WLAN-Clients (`mapAgent`/`mapController`).
+  **Fehler bleiben sichtbar** (`Login failed!`, `Connection Fail …`); `pppd`/`cos`-Routine bleibt
+  ebenfalls drin.
+* Eigene IP wird automatisch ermittelt; `[Events] own_ips` überschreibt sie (Komma-getrennt).
+* Alte Konfigurationen wirken weiter: `VoIP` blendet jetzt auch `voip_client` aus, `DHCPD`/`dhcpd`
+  ist immer aus, `Mesh` meint nur noch die Sitzungen (Fehlermeldungen der WLAN-Clients bleiben).
+* Die Regeln liegen als `routerlog.event_where()` in `routerlog.py` - identisch in beiden
+  Projekten. Damit ist auch angeglichen, dass tp-report die WLAN-Clientereignisse bisher **nicht**
+  automatisch ausgeblendet hat (~66 Zeilen/24 h zusätzlich).
+* Messung am Referenz-Router (24 h): 712 Ereignisse → 53 Zeilen (vorher 692).
+
 ## 17.10.2026
 
 **Anpassung an das neue Router-Log (Firmware 0.26.0)**

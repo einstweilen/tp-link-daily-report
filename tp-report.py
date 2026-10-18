@@ -1214,26 +1214,12 @@ class Reporter:
 
     def _get_events(self, hours=24, exclude_types=None, show_level=4):
         start_ts = int((datetime.now() - timedelta(hours=hours)).timestamp())
-        params = [start_ts]
-        exclude_clause = ""
-        
-        if show_level == 9:
-            if exclude_types:
-                exclude_clause = f"AND type COLLATE NOCASE NOT IN ({','.join('?' for _ in exclude_types)})"
-                params.extend(exclude_types)
-        else:
-            if exclude_types:
-                # Zeige Events, die NICHT in exclude_types stehen ODER die ein Fehler/Warnung (<= 4) sind.
-                # UND zeige generell nur Events, die <= show_level sind.
-                exclude_clause = f"AND (type COLLATE NOCASE NOT IN ({','.join('?' for _ in exclude_types)}) OR level_id <= 4) AND level_id <= ?"
-                params.extend(exclude_types)
-                params.append(show_level)
-            else:
-                exclude_clause = "AND level_id <= ?"
-                params.append(show_level)
-            
-        sql = f"SELECT time_ut, type, event_text, level_id FROM events WHERE time_ut >= ? {exclude_clause} ORDER BY time_ut DESC"
-        _, rows = self.db._run_query(sql, params)
+        # Alle Filterregeln (Ausschlusstypen, eigene Abrufe, Routine) liegen zentral
+        # in routerlog.py und gelten dadurch in beiden Projekten identisch.
+        where, params = routerlog.event_where(self.config, exclude_types, show_level)
+        sql = (f"SELECT time_ut, type, event_text, level_id FROM events WHERE time_ut >= ? {where} "
+               "ORDER BY time_ut DESC")
+        _, rows = self.db._run_query(sql, [start_ts] + params)
         return [[datetime.fromtimestamp(int(r[0])).strftime('%d.%m.%y %H:%M:%S'), f"{r[3]} {r[1]}", r[2]] for r in rows]
 
     def _get_connection_status(self):
@@ -2595,7 +2581,8 @@ def main():
         cleanup_days = config_mgr.config.getint('Events', 'cleanup_excludes', fallback=0)
         if cleanup_days > 0:
             exclude_raw = config_mgr.config.get('Events', 'exclude_types', fallback='')
-            types_to_purge = [t.strip() for t in exclude_raw.split(',') if t.strip()]
+            types_to_purge = routerlog.expand_exclude_types(
+                [t.strip() for t in exclude_raw.split(',') if t.strip()])
             if types_to_purge:
                 db.purge_old_events(cleanup_days, types_to_purge, debug=args.debug)
 

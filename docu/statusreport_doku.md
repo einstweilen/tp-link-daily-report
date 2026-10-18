@@ -292,9 +292,14 @@ start_hour    = 0           # Startstunde
 
 show_level    = 4           # Maximaler Loglevel (inklusiv)
 exclude_types = Mesh, DHCPD, VoIP  # Ausgeschlossene Event-Typen (bei Level 9)
+
+hide_own_activity = True    # eigene Abrufe und Routine ausblenden
+own_ips       =             # eigene IPs (leer = automatisch ermitteln)
 ```
 
 Da der reine Verwaltungstraffic des Routers i.d.R. nicht relevant für eine Verbindungsproblemanalyse ist, kann man die Events der `exclude_types` im Report ausblenden.
+
+Seit dem 18.10.2026 erledigt `hide_own_activity = True` (Standard) das für den größten Teil des Logs automatisch: eigene Abrufe von der eigenen IP (`httpd`/`cloud_https`), `tmpd`, die HTTP-Erfolgsmeldungen sowie die An-/Abmeldungen der WLAN-Clients. **Fehlermeldungen bleiben sichtbar** (`Login failed!`, `Connection Fail …`), ebenso `pppd`/`cos`-Routine. Die eigene IP ermittelt das Programm selbst; abweichende Adressen lassen sich unter `own_ips` eintragen (Komma-getrennt). Bei `hide_own_activity = False` erscheint wieder das ungefilterte Log.
 
 Um ein übermäßges Anwachsen der Datenbank zu verhindern, können über den Parameter `cleanup_excludes` alle Events der Typen `exclude_types`, die älter als X Tage sind, aus der Datenbank gelöscht werden.<br>
 Durch `cleanup_excludes = 0` werden keine Events zeitgesteuert gelöscht.
@@ -399,6 +404,12 @@ start_hour = 0       # Startstunde der Events (0 = Mitternacht)
 
 # Ausgeschlossene Event-Typen für das Log und die Analyse
 exclude_types = Mesh, DHCPD, VoIP
+
+# Eigene Abrufe und Routine ausblenden (tmpd, httpd-Erfolge, eigene IP, WLAN-An-/Abmeldungen).
+# Fehlermeldungen bleiben sichtbar.
+hide_own_activity = True
+# Eigene IP-Adressen für die Erkennung eigener Abrufe (leer = automatisch ermitteln)
+own_ips =
 
 # Log Level Filter: 0 Notfall   1 Alarm    2 Kritisch  3 Fehler 
 #                   4 Vorsicht  5 Hinweis  6 Info      7 Debug (zeigt alles)
